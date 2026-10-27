@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { fetchAllUsers, sendPasswordReset, setUserRole, setUserStatus } from "../lib/auth";
 import type { UserRecord, UserRole, UserStatus } from "../lib/auth";
+import { logAdminAction } from "../lib/admin";
 
 // The user list comes from the database. Row Level Security returns every user
 // only to support/admin/superadmin; role and status changes go through checked
@@ -50,6 +51,7 @@ export function UsersProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = useCallback(async (email: string) => {
     await sendPasswordReset(email);
+    await logAdminAction("password_reset_sent", email);
   }, []);
 
   return (

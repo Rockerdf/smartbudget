@@ -31,7 +31,7 @@ export const ALL_ADMIN_SCREENS: AdminScreen[] = [
 ];
 
 // Screen → minimum roles that may access it
-const SCREEN_PERMISSIONS: Record<AdminScreen, UserRole[]> = {
+export const SCREEN_PERMISSIONS: Record<AdminScreen, UserRole[]> = {
   adminDashboard:     ["superadmin", "admin", "support"],
   adminUsers:         ["superadmin", "admin", "support"],
   adminRoles:         ["superadmin"],
@@ -117,7 +117,7 @@ export type UserPageAction =
 // supabase/schema.sql). The database is the real gatekeeper; this list only
 // decides which buttons are shown. Accounts are created by people registering
 // themselves, and removed by the owner (Settings → Delete Account).
-const USER_PAGE_PERMISSIONS: Record<UserRole, UserPageAction[]> = {
+export const USER_PAGE_PERMISSIONS: Record<UserRole, UserPageAction[]> = {
   superadmin: ["view", "edit", "suspend", "activate", "resetPassword", "changeRole"],
   admin:      ["view", "edit", "suspend", "activate", "resetPassword"],
   support:    ["view", "resetPassword"],

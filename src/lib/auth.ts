@@ -89,6 +89,18 @@ function dateOnly(value: unknown): string {
   return typeof value === "string" && value ? value.slice(0, 10) : "";
 }
 
+// ── Sign-in event log (shown to admins in the Security Center) ───────────────
+
+/** Records a sign-in related event. Never blocks or breaks the sign-in flow. */
+export function recordAuthEvent(
+  event: "login_failed" | "password_reset_requested" | "logout" | "suspended_login_blocked",
+  email?: string,
+): Promise<void> {
+  return Promise.resolve(supabase.rpc("record_auth_event", { p_event: event, p_email: email ?? null }))
+    .then(() => undefined)
+    .catch(() => undefined);
+}
+
 // ── Session ──────────────────────────────────────────────────────────────────
 
 async function buildSession(user: User, rememberMe: boolean): Promise<UserSession> {
@@ -109,6 +121,7 @@ async function buildSession(user: User, rememberMe: boolean): Promise<UserSessio
     throw new Error("Your account profile is missing. Please contact support.");
   }
   if (profile.status === "suspended") {
+    await recordAuthEvent("suspended_login_blocked");
     await supabase.auth.signOut();
     throw new Error("Your account has been suspended. Please contact support for assistance.");
   }
@@ -167,7 +180,13 @@ export async function signUpWithEmail(
     options: { data: { full_name: trimmedName } },
   });
 
-  if (error) throw new Error(authErrorMessage(error, "Could not create your account."));
+  if (error) {
+    // The database refuses new accounts while an administrator has closed sign-ups.
+    if (/database error saving new user/i.test(error.message)) {
+      throw new Error("New sign-ups are currently closed. Please try again later.");
+    }
+    throw new Error(authErrorMessage(error, "Could not create your account."));
+  }
   if (!data.user || !data.session) return { status: "confirm_email" };
 
   setRememberPreference(true);
@@ -184,7 +203,10 @@ export async function signInWithEmail(
     password,
   });
 
-  if (error) throw new Error(authErrorMessage(error, "Could not sign in."));
+  if (error) {
+    void recordAuthEvent("login_failed", email);
+    throw new Error(authErrorMessage(error, "Could not sign in."));
+  }
   if (!data.user) throw new Error("Could not sign in.");
 
   setRememberPreference(rememberMe);
@@ -204,6 +226,7 @@ export async function signOutRemote(): Promise<void> {
   } catch {
     /* ignore */
   }
+  await recordAuthEvent("logout");
   await supabase.auth.signOut();
 }
 
@@ -237,6 +260,7 @@ export async function sendPasswordReset(email: string): Promise<void> {
     redirectTo: window.location.origin,
   });
   if (error) throw new Error(authErrorMessage(error, "Could not send a reset email."));
+  void recordAuthEvent("password_reset_requested", email);
 }
 
 // ── Own profile ──────────────────────────────────────────────────────────────

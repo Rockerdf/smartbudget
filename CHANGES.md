@@ -1,5 +1,19 @@
 # Changes
 
+## Admin panel made fully real (28 October 2026)
+
+- **Database (`supabase/admin_upgrade.sql`, also appended to `schema.sql`):** new tables for the activity log, sign-in events (with IP address and browser), lesson progress, content visibility and site settings; staff-only functions for dashboard stats, reports, security overview and the activity log. Role changes, suspensions, account deletions, settings and content changes are logged automatically by the database. Failed sign-in logging is rate limited. Security records are deleted after 12 months. 35 new permission tests (`supabase/tests/02_admin_tests.sql`).
+- **Dashboard:** live counts, 30-day sign-up/sign-in chart, feature adoption, users by role, real recent activity, newest accounts, and working quick actions (including a user CSV export).
+- **Reports:** monthly user activity, financial totals (anonymised), spending by category (only shown when 3+ people used it), lesson engagement and security, for 3/6/12 months, each exportable as CSV, plus a full PDF report.
+- **Security Center:** real failed and successful sign-ins with IP and device; automatic alerts (5+ failed sign-ins in 24 hours, suspended accounts trying to sign in, new staff roles) that can be marked resolved.
+- **Activity Log:** every staff action and sign-in event, with filters, search, paging and CSV export.
+- **Roles & Permissions:** generated from the rules the app and database actually enforce, with live member lists.
+- **Content:** hide or feature any lesson, video or book for all users; lesson start/completion stats. Lesson progress is now saved to each account.
+- **Site Settings:** maintenance mode (holding page for non-staff), close sign-ups (also enforced by the database), switch the AI assistant off, and an announcement banner.
+- Removed the "sample data" banner and the fake "All systems operational" (now a real database connection check). The admin panel now works on phones with a slide-out menu.
+- Privacy Policy updated to describe sign-in records, lesson progress and staff access to totals.
+
+
 ## Launch-readiness pass (26 October 2026)
 
 Starting point: the exact code running in Figma Make (newer than the Desktop repo; includes the demo-bank feature).

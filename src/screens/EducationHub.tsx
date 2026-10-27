@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Screen } from "../App";
-import { BOOKS, CATEGORIES, LESSONS, RESOURCES, VIDEOS } from "../content/education";
+import { BOOKS as ALL_BOOKS, CATEGORIES, LESSONS as ALL_LESSONS, RESOURCES, VIDEOS as ALL_VIDEOS } from "../content/education";
+import { fetchContentSettings, fetchProgress, markCompleted, markStarted } from "../lib/education";
+import type { ContentSetting } from "../lib/education";
 import type { Difficulty, Lesson, Video } from "../content/education";
 import { fetchGoals } from "../lib/goals";
 import { fetchBudget } from "../lib/budgets";
@@ -20,21 +22,18 @@ const difficultyStyle: Record<Difficulty, { bg: string; text: string }> = {
   Advanced:     { bg: "#FEE2E2", text: "#DC2626" },
 };
 
-// Lesson progress is a per-browser convenience, so it lives in localStorage.
-const PROGRESS_KEY = "sb_edu_progress";
 type Progress = { started: number[]; completed: number[] };
-function loadProgress(): Progress {
-  try {
-    const raw = localStorage.getItem(PROGRESS_KEY);
-    if (raw) {
-      const p = JSON.parse(raw);
-      return { started: Array.isArray(p.started) ? p.started : [], completed: Array.isArray(p.completed) ? p.completed : [] };
-    }
-  } catch { /* ignore */ }
-  return { started: [], completed: [] };
+
+/** Applies the admin's hide/feature choices: hidden items are removed, featured ones come first. */
+function arrange<T>(items: T[], keyOf: (t: T) => string, settings: Record<string, ContentSetting>): (T & { featured: boolean })[] {
+  return items
+    .filter((t) => !settings[keyOf(t)]?.hidden)
+    .map((t) => ({ ...t, featured: !!settings[keyOf(t)]?.featured }))
+    .sort((x, y) => Number(y.featured) - Number(x.featured));
 }
-function saveProgress(p: Progress) {
-  try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+
+function FeaturedTag() {
+  return <span className="text-[10px] font-bold uppercase tracking-wide text-[#B45309] bg-[#FEF3C7] px-2 py-0.5 rounded-full">Featured</span>;
 }
 
 /** If an image can't load (offline, blocked network), hide it and keep the placeholder background. */
@@ -92,7 +91,20 @@ function CloseIcon() {
 export default function EducationHub({ navigate }: { navigate: (s: Screen) => void }) {
   const [section, setSection] = useState<Section>("lessons");
   const [activeCat, setActiveCat] = useState("all");
-  const [progress, setProgress] = useState<Progress>(() => loadProgress());
+  const [progress, setProgress] = useState<Progress>({ started: [], completed: [] });
+  const [contentSettings, setContentSettings] = useState<Record<string, ContentSetting>>({});
+  const LESSONS = arrange(ALL_LESSONS, (l) => `lesson:${l.id}`, contentSettings);
+  const VIDEOS = arrange(ALL_VIDEOS, (v) => `video:${v.id}`, contentSettings);
+  const BOOKS = arrange(ALL_BOOKS, (b) => `book:${b.olKey.replace("/works/", "")}`, contentSettings);
+
+  // Progress is saved to the person's account; the visibility of lessons, videos
+  // and books is chosen by administrators in Admin › Content.
+  useEffect(() => {
+    let cancelled = false;
+    fetchProgress().then((p) => { if (!cancelled) setProgress(p); }).catch(() => undefined);
+    fetchContentSettings().then((c) => { if (!cancelled) setContentSettings(c); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
   const [openLesson, setOpenLesson] = useState<Lesson | null>(null);
   const [openVideo, setOpenVideo] = useState<Video | null>(null);
   const [nudge, setNudge] = useState<{ lesson: Lesson; reason: string } | null>(null);
@@ -104,9 +116,9 @@ export default function EducationHub({ navigate }: { navigate: (s: Screen) => vo
     Promise.all([fetchGoals().catch(() => null), fetchBudget().catch(() => null)]).then(([goals, budget]) => {
       if (cancelled) return;
       if (goals && goals.length === 0) {
-        setNudge({ lesson: LESSONS.find((l) => l.id === 1)!, reason: "You haven't set a savings goal yet. An emergency fund is often the best place to start." });
+        setNudge({ lesson: ALL_LESSONS.find((l) => l.id === 1)!, reason: "You haven't set a savings goal yet. An emergency fund is often the best place to start." });
       } else if (budget && budget.length === 0) {
-        setNudge({ lesson: LESSONS.find((l) => l.id === 2)!, reason: "You don't have a budget for this month yet. The 50/30/20 framework is a simple way to begin." });
+        setNudge({ lesson: ALL_LESSONS.find((l) => l.id === 2)!, reason: "You don't have a budget for this month yet. The 50/30/20 framework is a simple way to begin." });
       }
     });
     return () => { cancelled = true; };
@@ -119,22 +131,26 @@ export default function EducationHub({ navigate }: { navigate: (s: Screen) => vo
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const update = (next: Progress) => { setProgress(next); saveProgress(next); };
-
   const handleStart = (lesson: Lesson) => {
-    if (!progress.started.includes(lesson.id)) update({ ...progress, started: [...progress.started, lesson.id] });
+    if (!progress.started.includes(lesson.id)) {
+      setProgress((p) => ({ ...p, started: [...p.started, lesson.id] }));
+      void markStarted(lesson.id);
+    }
     setOpenLesson(lesson);
   };
 
   const handleComplete = (id: number) => {
-    if (!progress.completed.includes(id)) update({ ...progress, completed: [...progress.completed, id] });
+    if (!progress.completed.includes(id)) {
+      setProgress((p) => ({ started: p.started.includes(id) ? p.started : [...p.started, id], completed: [...p.completed, id] }));
+      void markCompleted(id);
+    }
     setOpenLesson(null);
   };
 
   const filtered = LESSONS.filter((l) => activeCat === "all" || l.category === activeCat);
   const filteredVideos = VIDEOS.filter((v) => activeCat === "all" || v.category === activeCat);
-  const completedCount = progress.completed.length;
-  const pct = Math.round((completedCount / LESSONS.length) * 100);
+  const completedCount = progress.completed.filter((id) => LESSONS.some((l) => l.id === id)).length;
+  const pct = LESSONS.length ? Math.round((completedCount / LESSONS.length) * 100) : 0;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1100px]">
@@ -292,6 +308,7 @@ export default function EducationHub({ navigate }: { navigate: (s: Screen) => vo
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: diff.bg, color: diff.text }}>{lesson.difficulty}</span>
                   <span className="text-[10px] text-[#94A3B8]">· {lesson.duration}</span>
+                  {lesson.featured && <FeaturedTag />}
                   {isCompleted && <span className="ml-auto text-[10px] font-bold text-[#10B981]">✓ Done</span>}
                 </div>
                 <h3 className="font-semibold text-[#0F172A] text-sm mb-2 leading-snug">{lesson.title}</h3>
@@ -322,6 +339,7 @@ export default function EducationHub({ navigate }: { navigate: (s: Screen) => vo
                   <span className="absolute bottom-2 right-2 text-[10px] font-semibold bg-black/75 text-white px-1.5 py-0.5 rounded">{v.length}</span>
                 </div>
                 <div className="p-4">
+                  {v.featured && <div className="mb-1.5"><FeaturedTag /></div>}
                   <h3 className="font-semibold text-sm text-[#0F172A] leading-snug">{v.title}</h3>
                   <p className="text-xs text-[#2563EB] mt-1">{v.channel}</p>
                   <p className="text-xs text-[#64748B] mt-2 leading-relaxed">{v.blurb}</p>
@@ -343,7 +361,7 @@ export default function EducationHub({ navigate }: { navigate: (s: Screen) => vo
                 <img src={`https://covers.openlibrary.org/b/id/${b.coverId}-M.jpg`} alt={`Cover of ${b.title}`} loading="lazy" onError={hideBroken}
                   className="w-20 h-[120px] object-cover rounded-lg bg-[#F1F5F9] shrink-0" />
                 <div className="min-w-0 flex flex-col">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[#7C3AED]">{b.tag}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[#7C3AED]">{b.tag}{b.featured ? " · Featured" : ""}</span>
                   <h3 className="font-semibold text-[#0F172A] leading-snug mt-0.5">{b.title}</h3>
                   <p className="text-xs text-[#64748B]">{b.author}</p>
                   <p className="text-xs text-[#475569] mt-2 leading-relaxed flex-1">{b.blurb}</p>

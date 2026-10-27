@@ -25,6 +25,29 @@ interface Props {
   userRole?: "user" | "admin";
   darkMode?: boolean;
   onToggleDark?: () => void;
+  /** Hidden when an administrator switches the assistant off. */
+  assistantEnabled?: boolean;
+  /** Site-wide message set in Admin › System Settings (empty = none). */
+  announcement?: string;
+}
+
+/** Announcement from the administrators; dismissed per message on this device. */
+function AnnouncementBar({ text }: { text: string }) {
+  const key = "sb_announcement_dismissed";
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem(key) === text; } catch { return false; }
+  });
+  if (!text.trim() || hidden) return null;
+  return (
+    <div className="bg-[#EFF6FF] border-b border-[#BFDBFE] px-4 sm:px-6 py-2.5 flex items-start gap-3 text-sm text-[#1E40AF]" role="status">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="mt-0.5 shrink-0"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+      <p className="flex-1">{text}</p>
+      <button type="button" aria-label="Dismiss announcement" className="text-[#60A5FA] hover:text-[#1E40AF] shrink-0"
+        onClick={() => { setHidden(true); try { localStorage.setItem(key, text); } catch { /* ignore */ } }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  );
 }
 
 // ---- Profile dropdown shown in the top-right header ----
@@ -244,7 +267,8 @@ function TopHeader({
   );
 }
 
-export default function AppLayout({ screen, navigate, onLogout, children, userName = "User", userRole = "user", darkMode = false, onToggleDark }: Props) {
+export default function AppLayout({ screen, navigate, onLogout, children, userName = "User", userRole = "user", darkMode = false, onToggleDark, assistantEnabled = true, announcement = "" }: Props) {
+  const items = navItems.filter((n) => assistantEnabled || n.id !== "ask");
   // Start each screen at the top instead of keeping the previous page's scroll position.
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [screen]);
@@ -263,7 +287,7 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {navItems.map(({ id, label, icon: Icon }) => {
+          {items.map(({ id, label, icon: Icon }) => {
             const active = screen === id;
             return (
               <button
@@ -319,12 +343,13 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
       <div className="flex-1 flex flex-col overflow-hidden">
         <TopHeader screen={screen} userName={userName} userRole={userRole} navigate={navigate} onLogout={onLogout} darkMode={darkMode} onToggleDark={onToggleDark} />
 
+        <AnnouncementBar text={announcement} />
         <main ref={mainRef} className="flex-1 overflow-y-auto pb-20 md:pb-0 relative">
           {children}
         </main>
       </div>
 
-      <MobileNav screen={screen} navigate={navigate} onLogout={onLogout} />
+      <MobileNav screen={screen} navigate={navigate} onLogout={onLogout} hideAsk={!assistantEnabled} />
     </div>
   );
 }
@@ -332,10 +357,10 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
 // ---- Mobile bottom nav: four main sections plus a "More" sheet with the rest ----
 const MOBILE_PRIMARY = ["dashboard", "transactions", "budget", "savings"] as const;
 
-function MobileNav({ screen, navigate, onLogout }: { screen: Screen; navigate: (s: Screen) => void; onLogout: () => void }) {
+function MobileNav({ screen, navigate, onLogout, hideAsk = false }: { screen: Screen; navigate: (s: Screen) => void; onLogout: () => void; hideAsk?: boolean }) {
   const [open, setOpen] = useState(false);
   const primary = navItems.filter((n) => (MOBILE_PRIMARY as readonly string[]).includes(n.id));
-  const rest = navItems.filter((n) => !(MOBILE_PRIMARY as readonly string[]).includes(n.id));
+  const rest = navItems.filter((n) => !(MOBILE_PRIMARY as readonly string[]).includes(n.id) && !(hideAsk && n.id === "ask"));
   const moreActive = rest.some((n) => n.id === screen);
   const go = (s: Screen) => { setOpen(false); navigate(s); };
 

@@ -1,206 +1,178 @@
-import { useState } from "react";
-import AIAssistant from "../../components/AIAssistant";
+import { useMemo, useState } from "react";
+import type { Screen } from "../../App";
+import { describeAgent, fetchSecurityOverview, formatDateTime, logAdminAction, timeAgo } from "../../lib/admin";
+import type { SecurityOverview } from "../../lib/admin";
 import { downloadCsv, todayStamp } from "../../lib/exportData";
-
-const FAILED_LOGINS = [
-  { id: 1, ts: "2026-09-22 23:41", ip: "103.21.244.0",  email: "admin@smartbudget.com", reason: "Wrong password",      attempts: 7, blocked: true  },
-  { id: 2, ts: "2026-09-22 21:18", ip: "91.240.118.61", email: "jordan.w@email.com",    reason: "Account suspended",   attempts: 3, blocked: false },
-  { id: 3, ts: "2026-09-22 19:05", ip: "45.142.212.10", email: "unknown@proton.me",     reason: "No account found",    attempts: 12, blocked: true  },
-  { id: 4, ts: "2026-09-21 14:33", ip: "185.220.101.14",email: "admin@smartbudget.com", reason: "Wrong password",      attempts: 2, blocked: false },
-  { id: 5, ts: "2026-09-21 09:12", ip: "62.232.101.5",  email: "riley.s@email.com",     reason: "Account suspended",   attempts: 1, blocked: false },
-  { id: 6, ts: "2026-09-20 22:54", ip: "37.120.10.201", email: "test@test.com",          reason: "No account found",    attempts: 5, blocked: true  },
-];
-
-const RECENT_LOGINS = [
-  { id: 1, ts: "2026-09-22 22:10", email: "admin@smartbudget.com", ip: "185.220.101.14", device: "Chrome / macOS",      role: "admin", status: "success" },
-  { id: 2, ts: "2026-09-22 20:44", email: "morgan.l@email.com",    ip: "141.101.72.55",  device: "Safari / iPhone",     role: "user",  status: "success" },
-  { id: 3, ts: "2026-09-22 18:30", email: "sam.o@email.com",       ip: "46.101.44.88",   device: "Firefox / Windows",   role: "user",  status: "success" },
-  { id: 4, ts: "2026-09-22 16:55", email: "casey.n@email.com",     ip: "37.120.10.201",  device: "Chrome / Android",    role: "user",  status: "success" },
-  { id: 5, ts: "2026-09-22 15:02", email: "jamie.c@email.com",     ip: "82.44.112.55",   device: "Chrome / macOS",      role: "user",  status: "success" },
-  { id: 6, ts: "2026-09-22 12:18", email: "morgan.l@email.com",    ip: "141.101.72.55",  device: "Chrome / Windows",    role: "user",  status: "success" },
-];
-
-const ALERTS = [
-  { id: 1, severity: "critical", icon: "🚨", title: "Brute-force attempt detected",      body: "IP 103.21.244.0 made 7 failed login attempts targeting the admin account. IP has been blocked.",  time: "1h ago",   resolved: false },
-  { id: 2, severity: "high",     icon: "⚠️",  title: "Credential stuffing probe",          body: "IP 45.142.212.10 attempted 12 logins using invalid email addresses. IP blocked automatically.", time: "3h ago",   resolved: false },
-  { id: 3, severity: "medium",   icon: "🔔", title: "Suspended user login attempt",       body: "riley.s@email.com (suspended) attempted to log in from a new device.",                            time: "Yesterday", resolved: true  },
-  { id: 4, severity: "low",      icon: "ℹ️",  title: "Admin login from known IP",          body: "Administrator logged in from 185.220.101.14. Device: Chrome / macOS. No action required.",      time: "2h ago",   resolved: true  },
-  { id: 5, severity: "high",     icon: "⚠️",  title: "Prompt injection attempt",           body: "User jordan.w attempted a jailbreak prompt. AI boundary held. Interaction flagged for review.",  time: "Sep 15",   resolved: true  },
-];
-
-const sevStyle = {
-  critical: { dot: "bg-[#EF4444]", badge: "bg-[#FEE2E2] text-[#991B1B]", border: "border-[#FECACA]", label: "Critical" },
-  high:     { dot: "bg-[#F97316]", badge: "bg-[#FFF7ED] text-[#9A3412]", border: "border-[#FED7AA]", label: "High"     },
-  medium:   { dot: "bg-[#F59E0B]", badge: "bg-[#FEF3C7] text-[#92400E]", border: "border-[#FDE68A]", label: "Medium"   },
-  low:      { dot: "bg-[#10B981]", badge: "bg-[#D1FAE5] text-[#065F46]", border: "border-[#A7F3D0]", label: "Low"      },
-};
+import { Button, Card, DownloadIcon, Empty, Loadable, PageHeader, RefreshIcon, Stat, TableWrap, Tabs, td, th, useLoader, useToast } from "../../components/admin/ui";
 
 type Tab = "alerts" | "failed" | "logins";
+type Alert = { key: string; severity: "high" | "medium" | "low"; title: string; body: string; at: string };
 
-function StatTile({ label, value, sub, color }: { label: string; value: string | number; sub: string; color: string }) {
-  return (
-    <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0]">
-      <p className="text-xs text-[#64748B] mb-1">{label}</p>
-      <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-      <p className="text-xs text-[#94A3B8] mt-0.5">{sub}</p>
-    </div>
-  );
+/** Alerts are worked out from real sign-in events and admin actions. */
+function buildAlerts(s: SecurityOverview): Alert[] {
+  const out: Alert[] = [];
+  for (const f of s.repeated_failures) {
+    out.push({
+      key: `repeated:${f.email}:${f.last_at.slice(0, 10)}`,
+      severity: f.attempts >= 15 ? "high" : "medium",
+      title: `${f.attempts} failed sign-ins for ${f.email}`,
+      body: `In the last 24 hours, from ${f.ips} IP address${f.ips === 1 ? "" : "es"}${f.last_ip ? ` (latest ${f.last_ip})` : ""}. If this isn't the account owner, consider suspending the account or sending a password reset.`,
+      at: f.last_at,
+    });
+  }
+  for (const b of s.blocked_suspended) {
+    out.push({ key: `suspended:${b.email}:${b.at}`, severity: "medium", title: `Suspended account tried to sign in`, body: `${b.email}${b.ip ? ` from ${b.ip}` : ""}. The sign-in was blocked.`, at: b.at });
+  }
+  for (const p of s.privilege_changes) {
+    out.push({ key: `privilege:${p.id}`, severity: p.details.to === "superadmin" || p.details.to === "admin" ? "medium" : "low",
+      title: `${p.target ?? "A user"} was given the ${p.details.to} role`, body: `Changed by ${p.by ?? "unknown"} (was ${p.details.from ?? "?"}). Check this was expected.`, at: p.at });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at));
 }
 
-export default function AdminSecurityCenter() {
-  const [tab, setTab] = useState<Tab>("alerts");
-  const [alerts, setAlerts] = useState(ALERTS);
-  const [toast, setToast] = useState("");
+const sevStyle = {
+  high: "border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]",
+  medium: "border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]",
+  low: "border-[#BFDBFE] bg-[#EFF6FF] text-[#1E40AF]",
+};
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
-  const openAlerts = alerts.filter((a) => !a.resolved).length;
-  const blockedIPs  = FAILED_LOGINS.filter((l) => l.blocked).length;
+export default function AdminSecurityCenter({ navigate }: { navigate: (s: Screen) => void }) {
+  const { data: s, loading, refreshing, error, reload } = useLoader(fetchSecurityOverview);
+  const [tab, setTab] = useState<Tab>("alerts");
+  const [showResolved, setShowResolved] = useState(false);
+  const [justResolved, setJustResolved] = useState<string[]>([]);
+  const toast = useToast();
+
+  const alerts = useMemo(() => (s ? buildAlerts(s) : []), [s]);
+  const resolved = new Set([...(s?.resolved_keys ?? []), ...justResolved]);
+  const open = alerts.filter((a) => !resolved.has(a.key));
+  const visible = showResolved ? alerts : open;
+
+  const resolve = async (a: Alert) => {
+    await logAdminAction("alert_resolved", a.title, { key: a.key });
+    setJustResolved((k) => [...k, a.key]);
+    toast.show("Alert marked as resolved");
+  };
+
+  const exportCsv = () => {
+    if (!s) return;
+    const rows = tab === "logins"
+      ? [["When", "Email", "IP address", "Device"], ...s.recent_logins.map((l) => [formatDateTime(l.at), l.email, l.ip ?? "", describeAgent(l.agent)])]
+      : tab === "failed"
+      ? [["When", "Email", "Existing account", "IP address", "Device"], ...s.recent_failed.map((l) => [formatDateTime(l.at), l.email, l.known_user ? "Yes" : "No", l.ip ?? "", describeAgent(l.agent)])]
+      : [["When", "Severity", "Alert", "Details", "Status"], ...alerts.map((a) => [formatDateTime(a.at), a.severity, a.title, a.body, resolved.has(a.key) ? "Resolved" : "Open"])];
+    downloadCsv(`smartbudget-security-${tab}-${todayStamp()}.csv`, rows);
+    void logAdminAction("report_exported", `Security: ${tab}`, { format: "csv" });
+    toast.show("Downloaded");
+  };
 
   return (
-    <div>
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F172A] text-white text-sm px-5 py-3 rounded-xl shadow-xl z-50 max-w-[90vw] text-center">{toast}</div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A]">Security Center</h1>
-          <p className="text-sm text-[#64748B] mt-1">Monitor platform security, login activity, and threat alerts in real time.</p>
-        </div>
-        <button onClick={() => {
-            downloadCsv(`security-alerts-sample-${todayStamp()}.csv`, [
-              ["Severity", "Title", "Details", "When", "Status"],
-              ...alerts.map((a) => [a.severity, a.title, a.body, a.time, a.resolved ? "Resolved" : "Open"]),
-            ]);
-            showToast("✓ Security alerts exported (sample data)");
-          }}
-          className="flex items-center gap-2 text-sm font-semibold text-[#2563EB] border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-2.5 rounded-xl hover:bg-[#DBEAFE] transition-colors">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Export Report
-        </button>
-      </div>
-
-      {/* Open-alerts banner */}
-      {openAlerts > 0 && (
-        <div className="flex items-center gap-3 bg-[#FEF2F2] border border-[#FECACA] rounded-2xl px-5 py-4 mb-5">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#EF4444] animate-pulse shrink-0" />
-          <p className="text-sm text-[#991B1B] font-semibold">{openAlerts} open security alert{openAlerts !== 1 ? "s" : ""} require your attention.</p>
-        </div>
-      )}
-
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <StatTile label="Open Alerts"       value={openAlerts}               sub="require review"      color="#EF4444" />
-        <StatTile label="Failed Logins (7d)" value={FAILED_LOGINS.length}    sub="last 7 days"         color="#F97316" />
-        <StatTile label="Blocked IPs"        value={blockedIPs}               sub="auto-blocked"        color="#8B5CF6" />
-        <StatTile label="Successful Logins"  value={RECENT_LOGINS.length}    sub="last 24 hours"       color="#10B981" />
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 bg-[#F1F5F9] rounded-xl p-1 w-fit mb-5">
-        {([
-          { id: "alerts" as const, label: "Security Alerts", badge: openAlerts },
-          { id: "failed" as const, label: "Failed Logins",   badge: 0 },
-          { id: "logins" as const, label: "Recent Logins",   badge: 0 },
-        ]).map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${tab === t.id ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}>
-            {t.label}
-            {t.badge > 0 ? <span className="text-[10px] font-bold bg-[#EF4444] text-white px-1.5 py-0.5 rounded-full">{t.badge}</span> : null}
-          </button>
-        ))}
-      </div>
-
-      {/* Security Alerts */}
-      {tab === "alerts" && (
-        <div className="space-y-3">
-          {alerts.map((alert) => {
-            const s = sevStyle[alert.severity as keyof typeof sevStyle];
-            return (
-              <div key={alert.id} className={`bg-white rounded-2xl border ${s.border} p-5 flex gap-4 ${alert.resolved ? "opacity-60" : ""}`}>
-                <span className="text-2xl leading-none mt-0.5 shrink-0">{alert.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.badge}`}>{s.label}</span>
-                    {alert.resolved
-                      ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#D1FAE5] text-[#065F46]">Resolved</span>
-                      : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FEE2E2] text-[#991B1B]">Open</span>}
-                    <span className="text-xs text-[#94A3B8]">{alert.time}</span>
-                  </div>
-                  <p className="font-semibold text-[#0F172A] text-sm mb-0.5">{alert.title}</p>
-                  <p className="text-xs text-[#64748B] leading-relaxed">{alert.body}</p>
-                </div>
-                {!alert.resolved && (
-                  <button
-                    onClick={() => { setAlerts((prev) => prev.map((a) => a.id === alert.id ? { ...a, resolved: true } : a)); showToast("Alert resolved"); }}
-                    className="text-xs font-semibold text-[#10B981] bg-[#D1FAE5] px-3 py-1.5 rounded-lg hover:bg-[#A7F3D0] transition-colors shrink-0 self-start">
-                    Resolve
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Failed Logins */}
-      {tab === "failed" && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-          <div className="grid grid-cols-[1fr_130px_100px_80px_80px] gap-3 px-5 py-3 bg-[#F8FAFC] text-xs font-semibold text-[#64748B] uppercase tracking-wide">
-            <span>Email / IP</span><span>Timestamp</span><span>Reason</span><span>Attempts</span><span>Status</span>
-          </div>
-          <div className="divide-y divide-[#F8FAFC]">
-            {FAILED_LOGINS.map((l) => (
-              <div key={l.id} className={`grid grid-cols-[1fr_130px_100px_80px_80px] gap-3 px-5 py-3.5 items-center ${l.attempts >= 5 ? "bg-[#FFF5F5]" : ""}`}>
-                <div>
-                  <p className="text-sm text-[#0F172A] font-medium truncate">{l.email}</p>
-                  <p className="text-xs font-mono text-[#94A3B8]">{l.ip}</p>
-                </div>
-                <span className="text-xs text-[#64748B]">{l.ts}</span>
-                <span className="text-xs text-[#64748B]">{l.reason}</span>
-                <span className={`text-xs font-bold ${l.attempts >= 5 ? "text-[#EF4444]" : "text-[#64748B]"}`}>{l.attempts}</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${l.blocked ? "bg-[#FEE2E2] text-[#991B1B]" : "bg-[#D1FAE5] text-[#065F46]"}`}>
-                  {l.blocked ? "Blocked" : "Allowed"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* AI Assistant */}
-      <AIAssistant
-        context="admin-security"
-        assistantName="Security Assistant"
-        accentColor="#DC2626"
-        admin
-        contextData={{ openAlerts }}
+    <div className="max-w-[1200px]">
+      {toast.node}
+      <PageHeader
+        title="Security Center"
+        sub={s ? `Real sign-in activity · updated ${timeAgo(s.generated_at)}` : "Real sign-in activity"}
+        actions={<>
+          <Button small onClick={reload} disabled={refreshing}><RefreshIcon spinning={refreshing} /> Refresh</Button>
+          <Button small onClick={exportCsv} disabled={!s}><DownloadIcon /> Export</Button>
+        </>}
       />
-
-      {/* Recent Logins */}
-      {tab === "logins" && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-          <div className="grid grid-cols-[1fr_130px_130px_100px_80px] gap-3 px-5 py-3 bg-[#F8FAFC] text-xs font-semibold text-[#64748B] uppercase tracking-wide">
-            <span>Account</span><span>Timestamp</span><span>Device</span><span>IP</span><span>Role</span>
-          </div>
-          <div className="divide-y divide-[#F8FAFC]">
-            {RECENT_LOGINS.map((l) => (
-              <div key={l.id} className="grid grid-cols-[1fr_130px_130px_100px_80px] gap-3 px-5 py-3.5 items-center hover:bg-[#FAFAFA]">
-                <p className="text-sm text-[#0F172A] font-medium truncate">{l.email}</p>
-                <span className="text-xs text-[#64748B]">{l.ts}</span>
-                <span className="text-xs text-[#64748B] truncate">{l.device}</span>
-                <span className="text-xs font-mono text-[#94A3B8]">{l.ip}</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${l.role === "admin" ? "bg-[#FEF3C7] text-[#92400E]" : "bg-[#EFF6FF] text-[#1D4ED8]"}`}>
-                  {l.role === "admin" ? "Admin" : "User"}
-                </span>
+      <Loadable loading={loading} error={error} onRetry={reload}>
+        {s && (
+          <div className="space-y-5">
+            {open.length > 0 ? (
+              <div className="rounded-2xl border border-[#FECACA] bg-[#FEF2F2] px-5 py-3.5 text-sm font-semibold text-[#991B1B] flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#EF4444] animate-pulse" />
+                {open.length} open security alert{open.length === 1 ? "" : "s"} need{open.length === 1 ? "s" : ""} your attention.
               </div>
-            ))}
+            ) : (
+              <div className="rounded-2xl border border-[#BBF7D0] bg-[#F0FDF4] px-5 py-3.5 text-sm font-semibold text-[#166534] flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E]" /> No open security alerts.
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <Stat label="Failed sign-ins (24 h)" value={s.failed_24h} tone={s.failed_24h ? "warn" : "default"} sub={`${s.failed_7d} in the last 7 days`} onClick={() => setTab("failed")} />
+              <Stat label="Successful sign-ins (24 h)" value={s.success_24h} tone="good" onClick={() => setTab("logins")} />
+              <Stat label="Suspended accounts" value={s.suspended_accounts} tone={s.suspended_accounts ? "bad" : "default"} sub="Manage in Users" onClick={() => navigate("adminUsers")} />
+              <Stat label="Password resets (7 days)" value={s.resets_7d} sub={`${s.staff_accounts} staff accounts`} />
+            </div>
+
+            <Tabs value={tab} onChange={setTab} items={[
+              { id: "alerts", label: "Alerts", count: open.length },
+              { id: "failed", label: "Failed sign-ins" },
+              { id: "logins", label: "Successful sign-ins" },
+            ]} />
+
+            {tab === "alerts" && (
+              <Card title="Security alerts" sub="Raised automatically: 5+ failed sign-ins in 24 hours, suspended accounts trying to sign in, and new staff roles."
+                actions={<label className="text-xs text-[#64748B] flex items-center gap-2 shrink-0"><input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} /> Show resolved</label>}>
+                {visible.length === 0 ? <Empty>{alerts.length ? "All alerts are resolved." : "Nothing suspicious detected."}</Empty> : (
+                  <ul className="space-y-3">
+                    {visible.map((a) => {
+                      const done = resolved.has(a.key);
+                      return (
+                        <li key={a.key} className={`rounded-xl border p-4 ${done ? "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]" : sevStyle[a.severity]}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm">{a.title}</p>
+                              <p className="text-xs mt-1 leading-relaxed">{a.body}</p>
+                              <p className="text-[11px] mt-2 opacity-75">{formatDateTime(a.at)} · {a.severity} severity</p>
+                            </div>
+                            {done ? <span className="text-xs font-semibold text-[#16A34A] shrink-0">✓ Resolved</span> : (
+                              <div className="flex gap-2 shrink-0">
+                                {a.key.startsWith("repeated:") || a.key.startsWith("suspended:") ? <Button small variant="ghost" onClick={() => navigate("adminUsers")}>Open Users</Button> : null}
+                                <Button small onClick={() => void resolve(a)}>Mark resolved</Button>
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Card>
+            )}
+
+            {tab === "failed" && (
+              <Card title="Failed sign-ins" sub="Latest 100 attempts with a wrong email or password">
+                {s.recent_failed.length === 0 ? <Empty>No failed sign-ins recorded.</Empty> : (
+                  <TableWrap>
+                    <thead><tr><th className={th}>When</th><th className={th}>Email</th><th className={th}>Account exists</th><th className={th}>IP address</th><th className={th}>Device</th></tr></thead>
+                    <tbody>{s.recent_failed.map((l, i) => (
+                      <tr key={i}>
+                        <td className={`${td} text-[#475569] whitespace-nowrap`}>{formatDateTime(l.at)}</td>
+                        <td className={`${td} font-medium text-[#0F172A]`}>{l.email}</td>
+                        <td className={td}>{l.known_user ? <span className="text-xs font-semibold text-[#B45309]">Yes</span> : <span className="text-xs text-[#94A3B8]">No</span>}</td>
+                        <td className={`${td} font-mono text-xs text-[#475569]`}>{l.ip ?? "—"}</td>
+                        <td className={`${td} text-[#475569]`}>{describeAgent(l.agent)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </TableWrap>
+                )}
+              </Card>
+            )}
+
+            {tab === "logins" && (
+              <Card title="Successful sign-ins" sub="Latest 100 sign-ins">
+                {s.recent_logins.length === 0 ? <Empty>No sign-ins recorded yet. New sign-ins appear here from now on.</Empty> : (
+                  <TableWrap>
+                    <thead><tr><th className={th}>When</th><th className={th}>Email</th><th className={th}>IP address</th><th className={th}>Device</th></tr></thead>
+                    <tbody>{s.recent_logins.map((l, i) => (
+                      <tr key={i}>
+                        <td className={`${td} text-[#475569] whitespace-nowrap`}>{formatDateTime(l.at)}</td>
+                        <td className={`${td} font-medium text-[#0F172A]`}>{l.email}</td>
+                        <td className={`${td} font-mono text-xs text-[#475569]`}>{l.ip ?? "—"}</td>
+                        <td className={`${td} text-[#475569]`}>{describeAgent(l.agent)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </TableWrap>
+                )}
+              </Card>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </Loadable>
     </div>
   );
 }

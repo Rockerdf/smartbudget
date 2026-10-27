@@ -39,6 +39,27 @@ Open http://localhost:5173.
 
 If the two `VITE_` values are missing, the app shows a "not configured yet" page instead of a blank screen.
 
+## Upgrading an existing database
+
+If your Supabase project was set up before the admin panel upgrade (28 October 2026), open **SQL Editor → New query**, paste the whole of `supabase/admin_upgrade.sql` and click **Run**. It is safe to run more than once. (`supabase/schema.sql` already includes it, so a new project only needs `schema.sql`.)
+
+## Admin panel
+
+Sign in with a `support`, `admin` or `superadmin` account to reach it. Everything is read live from the database through staff-only functions:
+
+| Page | What it shows / does | Who |
+|---|---|---|
+| Dashboard | Users, activity, sign-ins, feature adoption, recent activity, quick actions, user export | all staff |
+| Users | Search, suspend/reactivate, reset passwords, change roles | all staff (actions by role) |
+| Roles & Permissions | The real permission rules and who has each role | superadmin |
+| Reports | Monthly user, financial (anonymised), category, education and security reports; CSV/PDF | all staff |
+| Content | Hide or feature lessons, videos and books; lesson completion stats | superadmin |
+| Security Center | Failed/successful sign-ins with IP and device, automatic alerts | admin, superadmin |
+| Activity Log | Every staff action and sign-in event; search, filter, export | admin, superadmin |
+| Site Settings | Maintenance mode, sign-ups on/off, AI assistant on/off, announcement banner | superadmin |
+
+Staff never see individual people's transactions, budgets or goals, only totals.
+
 ## 3. Deploy
 
 The app is a static site (`npm run build` → `dist/`). Pages such as `/privacy` and `/terms` are handled by the app, so the host must send all paths to `index.html`. The config for that is already included.

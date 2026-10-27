@@ -1,216 +1,122 @@
-import { useState } from "react";
-import AIAssistant from "../../components/AIAssistant";
+import { useEffect, useState } from "react";
+import { actionLabel, describeActivity, describeAgent, fetchActivityLog, formatDateTime, logAdminAction } from "../../lib/admin";
+import { downloadCsv, todayStamp } from "../../lib/exportData";
+import { Button, Card, DownloadIcon, Empty, Loadable, PageHeader, RefreshIcon, TableWrap, Tabs, td, th, useLoader, useToast } from "../../components/admin/ui";
 
-type LogEntry = {
-  id: number;
-  ts: string;
-  actor: string;
-  role: "admin" | "user";
-  action: string;
-  target: string;
-  ip: string;
-  category: "auth" | "user" | "content" | "settings" | "ai" | "data";
-  severity: "info" | "warning" | "critical";
-};
+type Kind = "all" | "admin" | "auth" | "security";
+type Period = "24h" | "7d" | "30d" | "all";
+const PAGE = 25;
 
-const ALL_LOGS: LogEntry[] = [
-  { id:  1, ts: "2026-09-22 23:41", actor: "system",              role: "admin", action: "IP Blocked",          target: "103.21.244.0",            ip: "—",              category: "auth",     severity: "critical" },
-  { id:  2, ts: "2026-09-22 22:10", actor: "admin@smartbudget.com", role: "admin", action: "Admin Login",        target: "Session created",         ip: "185.220.101.14", category: "auth",     severity: "info"     },
-  { id:  3, ts: "2026-09-22 21:55", actor: "admin@smartbudget.com", role: "admin", action: "User Suspended",     target: "riley.s@email.com",       ip: "185.220.101.14", category: "user",     severity: "warning"  },
-  { id:  4, ts: "2026-09-22 21:30", actor: "admin@smartbudget.com", role: "admin", action: "Role Updated",       target: "Editor → casey.n",        ip: "185.220.101.14", category: "user",     severity: "info"     },
-  { id:  5, ts: "2026-09-22 20:44", actor: "morgan.l@email.com",  role: "user",  action: "User Login",          target: "Session created",         ip: "141.101.72.55",  category: "auth",     severity: "info"     },
-  { id:  6, ts: "2026-09-22 20:10", actor: "admin@smartbudget.com", role: "admin", action: "Content Published",  target: "Lesson: Compound Interest",ip: "185.220.101.14", category: "content",  severity: "info"     },
-  { id:  7, ts: "2026-09-22 19:05", actor: "system",              role: "admin", action: "IP Blocked",          target: "45.142.212.10",           ip: "—",              category: "auth",     severity: "critical" },
-  { id:  8, ts: "2026-09-22 18:30", actor: "sam.o@email.com",     role: "user",  action: "User Login",          target: "Session created",         ip: "46.101.44.88",   category: "auth",     severity: "info"     },
-  { id:  9, ts: "2026-09-22 17:45", actor: "admin@smartbudget.com", role: "admin", action: "Settings Updated",   target: "AI rate limit → 100",     ip: "185.220.101.14", category: "settings", severity: "warning"  },
-  { id: 10, ts: "2026-09-22 16:55", actor: "casey.n@email.com",   role: "user",  action: "User Login",          target: "Session created",         ip: "37.120.10.201",  category: "auth",     severity: "info"     },
-  { id: 11, ts: "2026-09-22 16:00", actor: "morgan.l@email.com",  role: "user",  action: "AI Chat",             target: "38 messages sent",        ip: "141.101.72.55",  category: "ai",       severity: "info"     },
-  { id: 12, ts: "2026-09-22 15:30", actor: "admin@smartbudget.com", role: "admin", action: "User Deleted",       target: "old_test@example.com",    ip: "185.220.101.14", category: "user",     severity: "warning"  },
-  { id: 13, ts: "2026-09-22 15:02", actor: "jamie.c@email.com",   role: "user",  action: "User Login",          target: "Session created",         ip: "82.44.112.55",   category: "auth",     severity: "info"     },
-  { id: 14, ts: "2026-09-22 14:20", actor: "jordan.w@email.com",  role: "user",  action: "AI Flag Triggered",   target: "Jailbreak prompt detected",ip: "91.240.118.61",  category: "ai",       severity: "critical" },
-  { id: 15, ts: "2026-09-22 13:45", actor: "admin@smartbudget.com", role: "admin", action: "Backup Created",     target: "Full DB snapshot",        ip: "185.220.101.14", category: "data",     severity: "info"     },
-  { id: 16, ts: "2026-09-22 12:18", actor: "morgan.l@email.com",  role: "user",  action: "User Login",          target: "Session created",         ip: "141.101.72.55",  category: "auth",     severity: "info"     },
-  { id: 17, ts: "2026-09-22 11:00", actor: "admin@smartbudget.com", role: "admin", action: "Content Created",    target: "Draft: Emergency Savings", ip: "185.220.101.14", category: "content",  severity: "info"     },
-  { id: 18, ts: "2026-09-22 09:30", actor: "system",              role: "admin", action: "Scheduled Backup",    target: "Nightly snapshot",        ip: "—",              category: "data",     severity: "info"     },
-  { id: 19, ts: "2026-09-21 22:10", actor: "sam.o@email.com",     role: "user",  action: "Savings Goal Created","target": "Goal: Holiday Fund",    ip: "46.101.44.88",   category: "data",     severity: "info"     },
-  { id: 20, ts: "2026-09-21 14:33", actor: "system",              role: "admin", action: "Failed Login",        target: "admin@smartbudget.com",   ip: "185.220.101.14", category: "auth",     severity: "warning"  },
+const PERIODS: { id: Period; label: string; ms: number | null }[] = [
+  { id: "24h", label: "24 hours", ms: 864e5 },
+  { id: "7d", label: "7 days", ms: 7 * 864e5 },
+  { id: "30d", label: "30 days", ms: 30 * 864e5 },
+  { id: "all", label: "All time", ms: null },
 ];
 
-const CATEGORIES = ["all", "auth", "user", "content", "settings", "ai", "data"] as const;
-const SEVERITIES = ["all", "info", "warning", "critical"] as const;
-
-const catStyle: Record<string, { label: string; color: string; bg: string }> = {
-  auth:     { label: "Auth",     color: "#1D4ED8", bg: "#EFF6FF" },
-  user:     { label: "User",     color: "#065F46", bg: "#D1FAE5" },
-  content:  { label: "Content",  color: "#6B21A8", bg: "#FAF5FF" },
-  settings: { label: "Settings", color: "#92400E", bg: "#FEF3C7" },
-  ai:       { label: "AI",       color: "#0891B2", bg: "#ECFEFF" },
-  data:     { label: "Data",     color: "#475569", bg: "#F1F5F9" },
-};
-
-const sevStyle: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  info:     { label: "Info",     color: "#1D4ED8", bg: "#EFF6FF", dot: "bg-[#60A5FA]" },
-  warning:  { label: "Warning",  color: "#92400E", bg: "#FEF3C7", dot: "bg-[#F59E0B]" },
-  critical: { label: "Critical", color: "#991B1B", bg: "#FEE2E2", dot: "bg-[#EF4444]" },
-};
-
-function exportCSV(logs: LogEntry[]) {
-  const header = "ID,Timestamp,Actor,Role,Action,Target,IP,Category,Severity\n";
-  const rows = logs.map((l) =>
-    [l.id, l.ts, l.actor, l.role, `"${l.action}"`, `"${l.target}"`, l.ip, l.category, l.severity].join(",")
-  ).join("\n");
-  const blob = new Blob([header + rows], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "audit-logs.csv"; a.click();
-  URL.revokeObjectURL(url);
-}
+const BAD = new Set(["login_failed", "suspended_login_blocked", "user_suspended", "account_deleted"]);
 
 export default function AdminAuditLogs() {
-  const [categoryFilter, setCategoryFilter] = useState<typeof CATEGORIES[number]>("all");
-  const [severityFilter, setSeverityFilter] = useState<typeof SEVERITIES[number]>("all");
+  const [kind, setKind] = useState<Kind>("all");
+  const [period, setPeriod] = useState<Period>("7d");
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const PER_PAGE = 10;
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const toast = useToast();
 
-  const filtered = ALL_LOGS.filter((l) => {
-    if (categoryFilter !== "all" && l.category !== categoryFilter) return false;
-    if (severityFilter !== "all" && l.severity !== severityFilter) return false;
-    if (search && ![l.actor, l.action, l.target, l.ip].some((f) => f.toLowerCase().includes(search.toLowerCase()))) return false;
-    return true;
-  });
+  // Search runs shortly after typing stops.
+  useEffect(() => { const t = setTimeout(() => { setQuery(search.trim()); setPage(0); }, 350); return () => clearTimeout(t); }, [search]);
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
-  const pageData = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const since = () => {
+    const ms = PERIODS.find((p) => p.id === period)?.ms;
+    return ms ? new Date(Date.now() - ms).toISOString() : null;
+  };
+  const { data, loading, refreshing, error, reload } = useLoader(
+    () => fetchActivityLog({ kind, search: query, limit: PAGE, offset: page * PAGE, since: since() }),
+    [kind, query, page, period],
+  );
 
-  const critCount = ALL_LOGS.filter((l) => l.severity === "critical").length;
-  const warnCount = ALL_LOGS.filter((l) => l.severity === "warning").length;
+  const pages = data ? Math.max(1, Math.ceil(data.total / PAGE)) : 1;
+
+  const exportCsv = async () => {
+    try {
+      const all = await fetchActivityLog({ kind, search: query, limit: 500, offset: 0, since: since() });
+      downloadCsv(`smartbudget-activity-${todayStamp()}.csv`, [
+        ["When", "Type", "Who", "Role", "Action", "Details", "IP address", "Device"],
+        ...all.rows.map((r) => [formatDateTime(r.created_at), r.kind === "admin" ? "Admin action" : "Sign-in event", r.who ?? "", r.who_role ?? "",
+          actionLabel(r.action), describeActivity(r), r.ip ?? "", r.agent ? describeAgent(r.agent) : ""]),
+      ]);
+      void logAdminAction("audit_exported", `${all.rows.length} rows`, { kind, period, search: query });
+      toast.show(`Downloaded ${all.rows.length} entries${all.total > 500 ? " (latest 500)" : ""}`);
+    } catch (e) {
+      toast.show(e instanceof Error ? e.message : "Could not export.");
+    }
+  };
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A]">Audit Logs</h1>
-          <p className="text-sm text-[#64748B] mt-1">Full history of all system, admin, and user actions.</p>
-        </div>
-        <button onClick={() => exportCSV(filtered)}
-          className="flex items-center gap-2 text-sm font-semibold text-[#2563EB] border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-2.5 rounded-xl hover:bg-[#DBEAFE] transition-colors">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Export CSV
-        </button>
-      </div>
-
-      {/* Summary strip */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Total Events",    value: ALL_LOGS.length, color: "#0F172A" },
-          { label: "Critical",        value: critCount,       color: "#EF4444" },
-          { label: "Warnings",        value: warnCount,       color: "#F59E0B" },
-          { label: "Last 24 h",       value: ALL_LOGS.filter((l) => l.ts.startsWith("2026-09-22")).length, color: "#2563EB" },
-        ].map((s) => (
-          <div key={s.label} className="bg-white rounded-2xl border border-[#E2E8F0] p-4">
-            <p className="text-xs text-[#64748B]">{s.label}</p>
-            <p className="text-2xl font-bold mt-1" style={{ color: s.color }}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] p-4 mb-4 flex flex-wrap gap-3 items-center">
-        <input
-          value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search actor, action, target, IP…"
-          className="flex-1 min-w-[180px] border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
-        />
-        <div className="flex gap-1 bg-[#F1F5F9] rounded-xl p-1">
-          {CATEGORIES.map((c) => (
-            <button key={c} onClick={() => { setCategoryFilter(c); setPage(1); }}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg capitalize transition-colors ${categoryFilter === c ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}>
-              {c}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1 bg-[#F1F5F9] rounded-xl p-1">
-          {SEVERITIES.map((s) => (
-            <button key={s} onClick={() => { setSeverityFilter(s); setPage(1); }}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg capitalize transition-colors ${severityFilter === s ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}>
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-        <div className="grid grid-cols-[140px_1fr_160px_120px_90px_80px] gap-3 px-5 py-3 bg-[#F8FAFC] text-xs font-semibold text-[#64748B] uppercase tracking-wide">
-          <span>Timestamp</span><span>Actor</span><span>Action</span><span>Target</span><span>Category</span><span>Severity</span>
-        </div>
-
-        {pageData.length === 0
-          ? <p className="text-sm text-[#94A3B8] text-center py-12">No log entries match the current filters.</p>
-          : (
-            <div className="divide-y divide-[#F8FAFC]">
-              {pageData.map((l) => {
-                const cat = catStyle[l.category];
-                const sev = sevStyle[l.severity];
-                return (
-                  <div key={l.id} className={`grid grid-cols-[140px_1fr_160px_120px_90px_80px] gap-3 px-5 py-3.5 items-center ${l.severity === "critical" ? "bg-[#FFF5F5]" : "hover:bg-[#FAFAFA]"}`}>
-                    <span className="text-xs font-mono text-[#64748B] leading-tight">{l.ts}</span>
-                    <div className="min-w-0">
-                      <p className="text-sm text-[#0F172A] font-medium truncate">{l.actor}</p>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${l.role === "admin" ? "bg-[#FEF3C7] text-[#92400E]" : "bg-[#EFF6FF] text-[#1D4ED8]"}`}>
-                        {l.role}
-                      </span>
-                    </div>
-                    <span className="text-sm text-[#0F172A] font-medium truncate">{l.action}</span>
-                    <span className="text-xs text-[#64748B] truncate">{l.target}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full w-fit" style={{ backgroundColor: cat.bg, color: cat.color }}>{cat.label}</span>
-                    <div className="flex items-center gap-1.5">
-                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${sev.dot}`} />
-                      <span className="text-[10px] font-bold" style={{ color: sev.color }}>{sev.label}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-[#F1F5F9]">
-            <p className="text-xs text-[#94A3B8]">
-              Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length}
-            </p>
-            <div className="flex gap-1">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                className="text-xs font-medium px-3 py-1.5 border border-[#E2E8F0] rounded-lg disabled:opacity-40 hover:bg-[#F8FAFC] transition-colors">
-                Prev
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                <button key={n} onClick={() => setPage(n)}
-                  className={`text-xs font-medium w-8 h-8 rounded-lg transition-colors ${n === page ? "bg-[#2563EB] text-white" : "border border-[#E2E8F0] hover:bg-[#F8FAFC]"}`}>
-                  {n}
-                </button>
-              ))}
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="text-xs font-medium px-3 py-1.5 border border-[#E2E8F0] rounded-lg disabled:opacity-40 hover:bg-[#F8FAFC] transition-colors">
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <AIAssistant
-        context="admin-audit"
-        assistantName="Audit Log Assistant"
-        accentColor="#0F172A"
-        admin
-        contextData={{ auditCount: ALL_LOGS.length }}
+    <div className="max-w-[1200px]">
+      {toast.node}
+      <PageHeader
+        title="Activity Log"
+        sub="Every staff action and sign-in event, recorded by the database. Entries can't be edited or deleted from the app."
+        actions={<>
+          <Button small onClick={reload} disabled={refreshing}><RefreshIcon spinning={refreshing} /> Refresh</Button>
+          <Button small onClick={() => void exportCsv()} disabled={!data?.total}><DownloadIcon /> Export CSV</Button>
+        </>}
       />
+
+      <div className="flex flex-col lg:flex-row gap-3 mb-4">
+        <Tabs value={kind} onChange={(k) => { setKind(k); setPage(0); }} items={[
+          { id: "all", label: "Everything" }, { id: "admin", label: "Admin actions" },
+          { id: "auth", label: "Sign-in events" }, { id: "security", label: "Security" },
+        ]} />
+        <select value={period} onChange={(e) => { setPeriod(e.target.value as Period); setPage(0); }} aria-label="Period"
+          className="border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white">
+          {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+        <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search email, action or IP"
+          aria-label="Search the activity log" className="flex-1 border border-[#E2E8F0] rounded-xl px-4 py-2 text-sm bg-white outline-none focus:border-[#2563EB]" />
+      </div>
+
+      <Loadable loading={loading} error={error} onRetry={reload}>
+        {data && (
+          <Card title={`${data.total.toLocaleString()} entr${data.total === 1 ? "y" : "ies"}`}
+            actions={pages > 1 ? <span className="text-xs text-[#94A3B8] shrink-0">Page {page + 1} of {pages}</span> : undefined}>
+            {data.rows.length === 0 ? <Empty>No activity matches these filters.</Empty> : (
+              <TableWrap>
+                <thead><tr><th className={th}>When</th><th className={th}>Who</th><th className={th}>Action</th><th className={th}>Details</th><th className={th}>IP / device</th></tr></thead>
+                <tbody>
+                  {data.rows.map((r, i) => (
+                    <tr key={i}>
+                      <td className={`${td} whitespace-nowrap text-[#475569]`}>{formatDateTime(r.created_at)}</td>
+                      <td className={td}>
+                        <p className="font-medium text-[#0F172A]">{r.who ?? "—"}</p>
+                        {r.who_role && <p className="text-[11px] text-[#94A3B8] capitalize">{r.who_role}</p>}
+                      </td>
+                      <td className={td}>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${BAD.has(r.action) ? "bg-[#FEF2F2] text-[#B91C1C]" : r.kind === "admin" ? "bg-[#F5F3FF] text-[#6D28D9]" : "bg-[#EFF6FF] text-[#1D4ED8]"}`}>
+                          {actionLabel(r.action)}
+                        </span>
+                      </td>
+                      <td className={`${td} text-[#475569] max-w-[280px]`}>{describeActivity(r) || "—"}</td>
+                      <td className={`${td} text-xs text-[#64748B]`}>
+                        <span className="font-mono">{r.ip ?? "—"}</span>
+                        {r.agent && <span className="block">{describeAgent(r.agent)}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+            )}
+            {pages > 1 && (
+              <div className="flex justify-between items-center mt-4">
+                <Button small variant="ghost" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>← Newer</Button>
+                <Button small variant="ghost" onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1}>Older →</Button>
+              </div>
+            )}
+          </Card>
+        )}
+      </Loadable>
     </div>
   );
 }

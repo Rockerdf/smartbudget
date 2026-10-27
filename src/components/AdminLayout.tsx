@@ -3,6 +3,7 @@ import type { Screen } from "../App";
 import type { UserRole } from "../lib/auth";
 import { canAccess, ROLE_META } from "../lib/permissions";
 import type { AdminScreen } from "../lib/permissions";
+import { supabase } from "../lib/supabase";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -149,6 +150,36 @@ const NAV_SECTIONS: { heading: string; screens: AdminScreen[] }[] = [
   { heading: "Platform",    screens: ["adminSecurity", "adminAuditLogs", "adminSystemSettings"] },
 ];
 
+// ── Live database status (replaces a hard-coded "all systems operational") ────
+
+function useDbStatus() {
+  const [state, setState] = useState<{ ok: boolean | null; ms: number }>({ ok: null, ms: 0 });
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const t0 = performance.now();
+      const { error } = await supabase.from("app_settings").select("key").limit(1);
+      if (!cancelled) setState({ ok: !error, ms: Math.round(performance.now() - t0) });
+    };
+    void check();
+    const t = setInterval(() => { void check(); }, 60_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+  return state;
+}
+
+function DbStatus() {
+  const { ok, ms } = useDbStatus();
+  const color = ok === null ? "bg-[#64748B]" : ok ? "bg-[#10B981]" : "bg-[#EF4444]";
+  const text = ok === null ? "Checking database…" : ok ? `Database connected · ${ms} ms` : "Database unreachable";
+  return (
+    <div className="hidden md:flex items-center gap-2 text-xs text-[#94A3B8]" title="Checked every minute">
+      <span className={`w-2 h-2 rounded-full inline-block ${color} ${ok ? "animate-pulse" : ""}`} />
+      {text}
+    </div>
+  );
+}
+
 // ── Main layout ───────────────────────────────────────────────────────────────
 
 export default function AdminLayout({
@@ -156,113 +187,92 @@ export default function AdminLayout({
 }: Props) {
   const pageLabel = NAV_ITEMS.find((n) => n.screen === screen)?.label ?? "Dashboard";
   const m = ROLE_META[userRole];
+  const [menuOpen, setMenuOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => { setMenuOpen(false); mainRef.current?.scrollTo(0, 0); }, [screen]);
+
+  const sidebar = (
+    <>
+      <div className="h-16 flex items-center gap-2.5 px-5 border-b border-white/10 shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2l9 4v6c0 5.25-3.75 10.14-9 11.5C6.75 22.14 3 17.25 3 12V6l9-4z"/></svg>
+        </div>
+        <div className="flex-1">
+          <div className="text-white font-bold text-sm leading-none">SmartBudget</div>
+          <div className="text-[10px] font-semibold tracking-widest uppercase leading-none mt-0.5" style={{ color: m.avatarBg }}>{m.badge} Panel</div>
+        </div>
+        <button type="button" onClick={() => setMenuOpen(false)} className="lg:hidden text-[#94A3B8] hover:text-white" aria-label="Close menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-5" aria-label="Admin">
+        {NAV_SECTIONS.map((section) => {
+          const visible = section.screens
+            .map((sc) => NAV_ITEMS.find((n) => n.screen === sc)!)
+            .filter((item) => item && canAccess(userRole, item.screen));
+          if (visible.length === 0) return null;
+          return (
+            <div key={section.heading}>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-[#64748B] px-3 mb-1.5">{section.heading}</p>
+              <div className="space-y-0.5">
+                {visible.map((item) => {
+                  const active = screen === item.screen;
+                  return (
+                    <button key={item.screen} type="button" onClick={() => { setMenuOpen(false); navigate(item.screen); }} aria-current={active ? "page" : undefined}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${active ? "bg-[#2563EB] text-white" : "text-[#94A3B8] hover:bg-white/5 hover:text-white"}`}>
+                      <span className={active ? "text-white" : "text-[#64748B]"}>{item.icon}</span>
+                      <span className="flex-1 truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </nav>
+      <div className="px-3 pb-4 pt-3 border-t border-white/10 shrink-0 space-y-1">
+        <button type="button" onClick={() => navigate("privacy")} className="w-full text-left px-3 py-1.5 text-xs text-[#64748B] hover:text-white">Privacy &amp; policies</button>
+        <button type="button" onClick={onLogout}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#94A3B8] hover:bg-white/5 hover:text-white transition-all">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign out
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div className="flex h-screen bg-[#0F172A] overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-60 shrink-0 flex flex-col border-r border-white/10">
-        {/* Logo / brand */}
-        <div className="h-16 flex items-center gap-2.5 px-5 border-b border-white/10 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center shrink-0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-              <path d="M12 2l9 4v6c0 5.25-3.75 10.14-9 11.5C6.75 22.14 3 17.25 3 12V6l9-4z"/>
-            </svg>
-          </div>
-          <div>
-            <div className="text-white font-bold text-sm leading-none">SmartBudget</div>
-            <div className="text-[10px] font-semibold tracking-widest uppercase leading-none mt-0.5" style={{ color: m.avatarBg }}>
-              {m.badge} Panel
-            </div>
-          </div>
+      {/* Sidebar (desktop) */}
+      <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-white/10">{sidebar}</aside>
+
+      {/* Sidebar (phones and tablets) */}
+      {menuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Admin menu">
+          <aside className="w-72 max-w-[85vw] bg-[#0F172A] flex flex-col shadow-2xl">{sidebar}</aside>
+          <button type="button" className="flex-1 bg-black/50" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
         </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-3 py-4 overflow-y-auto space-y-5">
-          {NAV_SECTIONS.map((section) => {
-            // Filter to only items this role can access
-            const visible = section.screens
-              .map((s) => NAV_ITEMS.find((n) => n.screen === s)!)
-              .filter((item) => item && canAccess(userRole, item.screen));
-
-            if (visible.length === 0) return null;
-
-            return (
-              <div key={section.heading}>
-                <p className="text-[9px] font-bold uppercase tracking-widest text-[#475569] px-3 mb-1.5">
-                  {section.heading}
-                </p>
-                <div className="space-y-0.5">
-                  {visible.map((item) => {
-                    const active = screen === item.screen;
-                    return (
-                      <button
-                        key={item.screen}
-                        onClick={() => navigate(item.screen)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                          active
-                            ? "bg-[#2563EB] text-white"
-                            : "text-[#94A3B8] hover:bg-white/5 hover:text-white"
-                        }`}>
-                        <span className={active ? "text-white" : "text-[#475569]"}>{item.icon}</span>
-                        <span className="flex-1 truncate">{item.label}</span>
-                        {item.badge ? (
-                          <span className="text-[10px] font-bold bg-[#EF4444] text-white rounded-full px-1.5 py-0.5 shrink-0">
-                            {item.badge}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Sign out */}
-        <div className="px-3 pb-4 pt-3 border-t border-white/10 shrink-0">
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#94A3B8] hover:bg-white/5 hover:text-white transition-all">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            Sign out
-          </button>
-        </div>
-      </aside>
+      )}
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#F8FAFC]">
-        {/* Top bar */}
-        <header className="h-14 bg-[#0F172A] border-b border-white/10 flex items-center justify-between px-6 shrink-0">
-          <div className="text-sm text-[#64748B] flex items-center gap-1.5">
-            <span
-              style={{ color: m.avatarBg }}
-              className="font-semibold text-xs">
-              {m.badge}
-            </span>
-            <span className="text-[#334155]">/</span>
-            <span className="text-white font-medium">{pageLabel}</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs text-[#475569]">
-              <span className="w-2 h-2 rounded-full bg-[#10B981] inline-block animate-pulse" />
-              All systems operational
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#F8FAFC] min-w-0">
+        <header className="h-14 bg-[#0F172A] border-b border-white/10 flex items-center justify-between px-3 sm:px-6 shrink-0 gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <button type="button" onClick={() => setMenuOpen(true)} className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-white hover:bg-white/10" aria-label="Open menu">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+            <div className="text-sm text-[#64748B] flex items-center gap-1.5 min-w-0">
+              <span style={{ color: m.avatarBg }} className="font-semibold text-xs hidden sm:inline">{m.badge}</span>
+              <span className="text-[#334155] hidden sm:inline">/</span>
+              <span className="text-white font-medium truncate">{pageLabel}</span>
             </div>
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <DbStatus />
             <AdminProfileDropdown userName={userName} userRole={userRole} onLogout={onLogout} />
           </div>
         </header>
-
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6">
-          {screen !== "adminUsers" && screen !== "adminDashboard" && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
-              Prototype screen: the figures and records shown here are sample data for demonstration. They are not read from the live database.
-            </div>
-          )}
-          {children}
-        </main>
+        <main ref={mainRef} className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28">{children}</main>
       </div>
     </div>
   );

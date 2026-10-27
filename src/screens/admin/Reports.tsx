@@ -1,281 +1,187 @@
 import { useState } from "react";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { fetchReports, logAdminAction, timeAgo } from "../../lib/admin";
+import type { ReportData } from "../../lib/admin";
+import { LESSONS } from "../../content/education";
+import { downloadCsv, printReport, todayStamp } from "../../lib/exportData";
+import { Button, Card, DownloadIcon, Empty, Loadable, PageHeader, RefreshIcon, TableWrap, Tabs, td, th, useLoader, useToast } from "../../components/admin/ui";
 
-// ── Sample report data ────────────────────────────────────────────────────────
+type Section = "users" | "finance" | "categories" | "education" | "security";
+const RANGES = [3, 6, 12] as const;
 
-type ReportType = "userActivity" | "aiUsage" | "contentEngagement" | "financialSummary" | "security";
+const money = (n: number) => n.toLocaleString("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
+const monthLabel = (m: string) => {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(y, mo - 1, 1).toLocaleDateString("en-AU", { month: "short", year: "2-digit" });
+};
+const lessonTitle = (id: number) => LESSONS.find((l) => l.id === id)?.title ?? `Lesson ${id}`;
 
-const REPORT_DEFS: { id: ReportType; name: string; desc: string; icon: string; lastGenerated: string; size: string }[] = [
-  { id: "userActivity",        name: "User Activity Report",        desc: "Registration, login frequency, session lengths, feature usage breakdown",          icon: "👤", lastGenerated: "Today 09:17",    size: "42 KB"  },
-  { id: "aiUsage",             name: "AI Usage & Compliance",       desc: "Call volumes, flagged interactions, refusal rates, boundary adherence statistics",  icon: "🤖", lastGenerated: "Today 08:00",    size: "31 KB"  },
-  { id: "contentEngagement",   name: "Education Engagement",        desc: "Lesson views, completion rates, quiz scores, popular topics by cohort",             icon: "📚", lastGenerated: "Yesterday 22:00", size: "58 KB"  },
-  { id: "financialSummary",    name: "Aggregate Financial Trends",  desc: "Anonymised spending patterns by category across the user base — no PII included",  icon: "📊", lastGenerated: "Sep 20, 2026",   size: "76 KB"  },
-  { id: "security",            name: "Security & Access Report",    desc: "Failed logins, access denials, IP flags, admin actions log summary",               icon: "🔒", lastGenerated: "Today 06:00",    size: "28 KB"  },
-];
+type Table = { title: string; head: string[]; rows: (string | number)[][] };
 
-const USER_ACTIVITY_ROWS = [
-  { user: "morgan.l",  logins: 18, sessions: 21, avgLength: "9.2m", features: "Budgeting, AI, Education", lastSeen: "Today" },
-  { user: "sam.o",     logins: 12, sessions: 14, avgLength: "6.8m", features: "Expense Tracking, Goals",   lastSeen: "Today" },
-  { user: "jamie.c",   logins: 9,  sessions: 10, avgLength: "11.4m",features: "All features",              lastSeen: "Yesterday" },
-  { user: "casey.n",   logins: 6,  sessions: 7,  avgLength: "4.1m", features: "AI, Education",             lastSeen: "Yesterday" },
-  { user: "taylor.b",  logins: 3,  sessions: 3,  avgLength: "3.7m", features: "Dashboard only",            lastSeen: "Sep 18" },
-  { user: "riley.s",   logins: 2,  sessions: 2,  avgLength: "2.1m", features: "Dashboard, AI",             lastSeen: "Sep 15" },
-  { user: "jordan.w",  logins: 1,  sessions: 1,  avgLength: "1.8m", features: "AI",                        lastSeen: "Sep 15" },
-  { user: "morgan.l",  logins: 18, sessions: 21, avgLength: "9.2m", features: "Budgeting, AI, Education", lastSeen: "Today" },
-];
-
-const AI_USAGE_ROWS = [
-  { type: "Chat",     calls: 623, passed: 609, flagged: 14, refusals: 11, complianceRate: "98.2%" },
-  { type: "Category", calls: 312, passed: 312, flagged: 0,  refusals: 0,  complianceRate: "100%"  },
-  { type: "Budget",   calls: 198, passed: 198, flagged: 0,  refusals: 0,  complianceRate: "100%"  },
-  { type: "Insight",  calls: 64,  passed: 63,  flagged: 1,  refusals: 0,  complianceRate: "98.4%" },
-];
-
-const CONTENT_ROWS = [
-  { lesson: "Understanding Compound Interest", views: 89, completions: 71, avgScore: "84%", rating: "4.6★" },
-  { lesson: "Budgeting with the 50/30/20 Rule", views: 112, completions: 98, avgScore: "91%", rating: "4.8★" },
-  { lesson: "What Is a Credit Score?",          views: 76,  completions: 62, avgScore: "78%", rating: "4.3★" },
-  { lesson: "Emergency Fund Fundamentals",      views: 68,  completions: 54, avgScore: "88%", rating: "4.7★" },
-  { lesson: "Introduction to Investing",        views: 55,  completions: 31, avgScore: "72%", rating: "4.1★" },
-  { lesson: "How Tax Brackets Work",            views: 43,  completions: 28, avgScore: "69%", rating: "4.0★" },
-];
-
-// ── CSV export helpers ────────────────────────────────────────────────────────
-
-function exportCsv(filename: string, headers: string[], rows: string[][]) {
-  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+function tablesFor(r: ReportData): Record<Section, Table> {
+  return {
+    users: {
+      title: "User activity",
+      head: ["Month", "New sign-ups", "People who signed in", "Sign-ins", "People recording transactions"],
+      rows: r.user_activity.map((m) => [monthLabel(m.month), m.signups, m.active_users, m.logins, m.users_with_transactions]),
+    },
+    finance: {
+      title: "Financial activity (all users combined)",
+      head: ["Month", "Transactions", "Income recorded", "Expenses recorded", "People tracking"],
+      rows: r.financial_trends.map((m) => [monthLabel(m.month), m.transactions, money(m.income_total), money(m.expense_total), m.active_trackers]),
+    },
+    categories: {
+      title: "Spending by category (anonymised)",
+      head: ["Category", "Total spent", "People", "Transactions"],
+      rows: r.spending_by_category.map((c) => [c.category, money(c.total), c.people, c.transactions]),
+    },
+    education: {
+      title: "Education engagement",
+      head: ["Lesson", "Started", "Completed", "Completion rate"],
+      rows: r.education.map((e) => [lessonTitle(e.lesson_id), e.started, e.completed, e.started ? `${Math.round((e.completed / e.started) * 100)}%` : "—"]),
+    },
+    security: {
+      title: "Security summary",
+      head: ["Month", "Sign-ins", "Failed sign-ins", "Password resets", "Admin actions"],
+      rows: r.security.map((m) => [monthLabel(m.month), m.logins, m.failed_logins, m.password_resets, m.admin_actions]),
+    },
+  };
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function ReportCard({
-  def,
-  onGenerate,
-  onExport,
-}: {
-  def: typeof REPORT_DEFS[number];
-  onGenerate: (id: ReportType) => void;
-  onExport: (id: ReportType) => void;
-}) {
-  return (
-    <div className="bg-white rounded-2xl border border-[#E2E8F0] p-5 flex items-start gap-4 hover:shadow-sm transition-shadow">
-      <div className="w-12 h-12 rounded-xl bg-[#F8FAFC] flex items-center justify-center text-2xl shrink-0 border border-[#E2E8F0]">
-        {def.icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-[#0F172A] mb-0.5">{def.name}</h3>
-        <p className="text-xs text-[#64748B] leading-relaxed mb-3">{def.desc}</p>
-        <div className="flex flex-wrap gap-3 text-[10px] text-[#94A3B8]">
-          <span>Last generated: {def.lastGenerated}</span>
-          <span>·</span>
-          <span>Est. size: {def.size}</span>
-        </div>
-      </div>
-      <div className="flex flex-col gap-2 shrink-0">
-        <button
-          onClick={() => onGenerate(def.id)}
-          className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-3 py-1.5 rounded-lg hover:bg-[#DBEAFE] transition-colors"
-        >
-          Preview
-        </button>
-        <button
-          onClick={() => onExport(def.id)}
-          className="text-xs font-semibold text-white bg-[#0F172A] px-3 py-1.5 rounded-lg hover:bg-[#1E293B] transition-colors flex items-center gap-1.5"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          CSV
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
 
 export default function AdminReports() {
-  const [preview, setPreview] = useState<ReportType | null>(null);
-  const [toast, setToast] = useState("");
+  const [months, setMonths] = useState<(typeof RANGES)[number]>(6);
+  const [section, setSection] = useState<Section>("users");
+  const { data: r, loading, refreshing, error, reload } = useLoader(() => fetchReports(months), [months]);
+  const toast = useToast();
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+  const exportCsv = (which: Section) => {
+    if (!r) return;
+    const t = tablesFor(r)[which];
+    downloadCsv(`smartbudget-${which}-report-${todayStamp()}.csv`, [[`${t.title} · last ${months} months`], [], t.head, ...t.rows]);
+    void logAdminAction("report_exported", t.title, { format: "csv", months });
+    toast.show(`${t.title} downloaded`);
+  };
 
-  const handleGenerate = (id: ReportType) => setPreview(id === preview ? null : id);
+  const exportPdf = () => {
+    if (!r) return;
+    const all = tablesFor(r);
+    const ok = printReport("SmartBudget platform report", `Last ${months} months · generated ${new Date().toLocaleDateString("en-AU")}`,
+      (Object.keys(all) as Section[]).map((k) => ({ heading: all[k].title, rows: [all[k].head, ...all[k].rows] })));
+    if (ok) void logAdminAction("report_exported", "Full platform report", { format: "pdf", months });
+    toast.show(ok ? "Report opened. Choose \"Save as PDF\" in the print window." : "Please allow pop-ups for this site to open the report.");
+  };
 
-  const handleExport = (id: ReportType) => {
-    if (id === "userActivity") {
-      exportCsv(
-        "user-activity-report.csv",
-        ["User", "Logins", "Sessions", "Avg Length", "Features Used", "Last Seen"],
-        USER_ACTIVITY_ROWS.map((r) => [r.user, String(r.logins), String(r.sessions), r.avgLength, `"${r.features}"`, r.lastSeen])
-      );
-    } else if (id === "aiUsage") {
-      exportCsv(
-        "ai-usage-report.csv",
-        ["Type", "Total Calls", "Passed", "Flagged", "Refusals", "Compliance Rate"],
-        AI_USAGE_ROWS.map((r) => [r.type, String(r.calls), String(r.passed), String(r.flagged), String(r.refusals), r.complianceRate])
-      );
-    } else if (id === "contentEngagement") {
-      exportCsv(
-        "content-engagement-report.csv",
-        ["Lesson", "Views", "Completions", "Avg Score", "Rating"],
-        CONTENT_ROWS.map((r) => [`"${r.lesson}"`, String(r.views), String(r.completions), r.avgScore, r.rating])
-      );
-    } else {
-      showToast(`${REPORT_DEFS.find((d) => d.id === id)?.name} needs server-side data and isn't available in this prototype yet.`);
-      return;
-    }
-    showToast("✓ Export downloaded");
+  const t = r ? tablesFor(r) : null;
+  const chartData: Record<Section, Record<string, string | number>[]> | null = r ? {
+    users: r.user_activity.map((m) => ({ label: monthLabel(m.month), "New sign-ups": m.signups, "People who signed in": m.active_users })),
+    finance: r.financial_trends.map((m) => ({ label: monthLabel(m.month), Income: m.income_total, Expenses: m.expense_total })),
+    categories: r.spending_by_category.slice(0, 10).map((c) => ({ label: c.category, Spent: c.total })),
+    education: r.education.map((e) => ({ label: `L${e.lesson_id}`, Started: e.started, Completed: e.completed })),
+    security: r.security.map((m) => ({ label: monthLabel(m.month), "Sign-ins": m.logins, "Failed sign-ins": m.failed_logins })),
+  } : null;
+
+  const notes: Record<Section, string> = {
+    users: "Sign-ups and sign-ins each month.",
+    finance: "Totals across everyone. No individual's records are shown.",
+    categories: "Only categories used by at least 3 different people are listed, so no one can be identified.",
+    education: "How many people started and finished each lesson.",
+    security: "Sign-ins, failed attempts, reset requests and staff actions each month.",
   };
 
   return (
-    <div>
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F172A] text-white text-sm px-5 py-3 rounded-xl shadow-xl z-50 max-w-[90vw] text-center">
-          {toast}
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A]">Reports</h1>
-          <p className="text-sm text-[#64748B] mt-1">Generate and export platform reports. All exports are anonymised — no individual financial data is included.</p>
-        </div>
-      </div>
-
-      {/* Disclaimer banner */}
-      <div className="flex items-start gap-3 bg-[#FFFBEB] border border-[#FDE68A] rounded-2xl px-5 py-4 mb-6">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" className="mt-0.5 shrink-0">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        <p className="text-sm text-[#92400E]">
-          <strong>Data minimisation:</strong> Reports contain aggregate statistics only. Individual financial transaction data, account balances, and personal financial details are never exported.
-        </p>
-      </div>
-
-      {/* Report cards */}
-      <div className="space-y-3 mb-6">
-        {REPORT_DEFS.map((def) => (
-          <ReportCard key={def.id} def={def} onGenerate={handleGenerate} onExport={handleExport} />
-        ))}
-      </div>
-
-      {/* Preview panel */}
-      {preview && (
-        <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F1F5F9] flex items-center justify-between">
-            <div>
-              <h2 className="font-bold text-[#0F172A]">{REPORT_DEFS.find((d) => d.id === preview)?.name} — Preview</h2>
-              <p className="text-xs text-[#94A3B8] mt-0.5">Showing sample data · Generated {new Date().toLocaleTimeString()}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleExport(preview)}
-                className="text-xs font-semibold text-white bg-[#2563EB] px-3 py-1.5 rounded-lg hover:bg-[#1D4ED8] transition-colors flex items-center gap-1.5"
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                Export CSV
-              </button>
-              <button onClick={() => setPreview(null)} className="text-[#94A3B8] hover:text-[#0F172A] p-1">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
+    <div className="max-w-[1200px]">
+      {toast.node}
+      <PageHeader
+        title="Reports"
+        sub={r ? `Calculated from live data · updated ${timeAgo(r.generated_at)}` : "Calculated from live data"}
+        actions={<>
+          <div className="flex bg-[#F1F5F9] rounded-xl p-1" role="group" aria-label="Period">
+            {RANGES.map((m) => (
+              <button key={m} type="button" onClick={() => setMonths(m)} aria-pressed={months === m}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${months === m ? "bg-white shadow-sm text-[#0F172A]" : "text-[#64748B]"}`}>{m} months</button>
+            ))}
           </div>
+          <Button small onClick={reload} disabled={refreshing}><RefreshIcon spinning={refreshing} /> Refresh</Button>
+          <Button small variant="primary" onClick={exportPdf} disabled={!r}><DownloadIcon /> Full report (PDF)</Button>
+        </>}
+      />
 
-          <div className="overflow-x-auto">
-            {preview === "userActivity" && (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#F8FAFC] text-xs font-semibold text-[#64748B] uppercase tracking-wide">
-                    {["User", "Logins", "Sessions", "Avg Length", "Features", "Last Seen"].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F8FAFC]">
-                  {USER_ACTIVITY_ROWS.map((r, i) => (
-                    <tr key={i} className="hover:bg-[#FAFAFA]">
-                      <td className="px-5 py-3 font-mono text-xs text-[#94A3B8]">{r.user}</td>
-                      <td className="px-5 py-3 text-[#0F172A] font-semibold">{r.logins}</td>
-                      <td className="px-5 py-3 text-[#64748B]">{r.sessions}</td>
-                      <td className="px-5 py-3 text-[#64748B]">{r.avgLength}</td>
-                      <td className="px-5 py-3 text-xs text-[#64748B]">{r.features}</td>
-                      <td className="px-5 py-3 text-xs text-[#94A3B8]">{r.lastSeen}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {preview === "aiUsage" && (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#F8FAFC] text-xs font-semibold text-[#64748B] uppercase tracking-wide">
-                    {["Type", "Total Calls", "Passed", "Flagged", "Refusals", "Compliance"].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F8FAFC]">
-                  {AI_USAGE_ROWS.map((r, i) => (
-                    <tr key={i} className="hover:bg-[#FAFAFA]">
-                      <td className="px-5 py-3 font-semibold text-[#0F172A]">{r.type}</td>
-                      <td className="px-5 py-3 text-[#64748B]">{r.calls}</td>
-                      <td className="px-5 py-3 text-[#10B981] font-semibold">{r.passed}</td>
-                      <td className="px-5 py-3 text-[#EF4444] font-semibold">{r.flagged}</td>
-                      <td className="px-5 py-3 text-[#F59E0B] font-semibold">{r.refusals}</td>
-                      <td className="px-5 py-3">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.complianceRate === "100%" ? "bg-[#D1FAE5] text-[#065F46]" : "bg-[#FEF3C7] text-[#92400E]"}`}>
-                          {r.complianceRate}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {preview === "contentEngagement" && (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#F8FAFC] text-xs font-semibold text-[#64748B] uppercase tracking-wide">
-                    {["Lesson", "Views", "Completions", "Avg Score", "Rating"].map((h) => (
-                      <th key={h} className="px-5 py-3 text-left">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F8FAFC]">
-                  {CONTENT_ROWS.map((r, i) => (
-                    <tr key={i} className="hover:bg-[#FAFAFA]">
-                      <td className="px-5 py-3 text-[#0F172A] font-medium">{r.lesson}</td>
-                      <td className="px-5 py-3 text-[#64748B]">{r.views}</td>
-                      <td className="px-5 py-3 text-[#10B981] font-semibold">{r.completions}</td>
-                      <td className="px-5 py-3 text-[#0F172A]">{r.avgScore}</td>
-                      <td className="px-5 py-3 text-[#F59E0B] font-semibold">{r.rating}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {(preview === "financialSummary" || preview === "security") && (
-              <div className="px-5 py-10 text-center">
-                <div className="text-4xl mb-3">📊</div>
-                <p className="text-sm text-[#64748B]">Preview not available for this report type. Click <strong>Export CSV</strong> to download.</p>
-              </div>
-            )}
+      <Loadable loading={loading} error={error} onRetry={reload}>
+        {r && t && chartData && (
+          <div className="space-y-5">
+            <Tabs value={section} onChange={setSection} items={[
+              { id: "users", label: "User activity" }, { id: "finance", label: "Financial" },
+              { id: "categories", label: "Categories" }, { id: "education", label: "Education" }, { id: "security", label: "Security" },
+            ]} />
+
+            <Card title={t[section].title} sub={notes[section]}
+              actions={<Button small onClick={() => exportCsv(section)} disabled={!t[section].rows.length}><DownloadIcon /> CSV</Button>}>
+              {t[section].rows.length === 0 ? <Empty>No data for this period yet.</Empty> : (
+                <>
+                  <ResponsiveContainer width="100%" height={240}>
+                    {section === "finance" || section === "security" ? (
+                      <LineChart data={chartData[section]}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                        <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={50}
+                          tickFormatter={section === "finance" ? (v: number) => (v >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`) : undefined} />
+                        <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }}
+                          formatter={section === "finance" ? (v: unknown) => [typeof v === "number" ? money(v) : String(v), ""] : undefined} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        {Object.keys(chartData[section][0] ?? {}).filter((k) => k !== "label").map((k, i) => (
+                          <Line key={k} type="monotone" dataKey={k} stroke={["#2563EB", "#EF4444", "#10B981"][i]} strokeWidth={2} dot={{ r: 3 }} />
+                        ))}
+                      </LineChart>
+                    ) : (
+                      <BarChart data={chartData[section]} layout={section === "categories" ? "vertical" : "horizontal"}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                        {section === "categories" ? (
+                          <>
+                            <XAxis type="number" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
+                            <YAxis type="category" dataKey="label" tick={{ fontSize: 10, fill: "#64748B" }} axisLine={false} tickLine={false} width={110} />
+                          </>
+                        ) : (
+                          <>
+                            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+                            <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={30} />
+                          </>
+                        )}
+                        <Tooltip contentStyle={{ borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 12 }}
+                          formatter={section === "categories" ? (v: unknown) => [typeof v === "number" ? money(v) : String(v), "Spent"] : undefined} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        {Object.keys(chartData[section][0] ?? {}).filter((k) => k !== "label").map((k, i) => (
+                          <Bar key={k} dataKey={k} fill={["#2563EB", "#10B981", "#F59E0B"][i]} radius={[3, 3, 0, 0]} />
+                        ))}
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
+                  <div className="mt-5">
+                    <TableWrap>
+                      <thead><tr>{t[section].head.map((h) => <th key={h} className={th}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {t[section].rows.map((row, i) => (
+                          <tr key={i}>{row.map((c, j) => <td key={j} className={`${td} ${j === 0 ? "font-medium text-[#0F172A] whitespace-nowrap" : "text-[#475569] tabular-nums"}`}>{c}</td>)}</tr>
+                        ))}
+                      </tbody>
+                    </TableWrap>
+                  </div>
+                </>
+              )}
+            </Card>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {(Object.keys(t) as Section[]).map((k) => (
+                <button key={k} type="button" onClick={() => exportCsv(k)} disabled={!t[k].rows.length}
+                  className="text-left bg-white border border-[#E2E8F0] rounded-xl p-3.5 hover:border-[#BFDBFE] disabled:opacity-50">
+                  <p className="text-sm font-semibold text-[#0F172A]">{t[k].title}</p>
+                  <p className="text-xs text-[#2563EB] mt-1 flex items-center gap-1"><DownloadIcon /> Download CSV · {t[k].rows.length} rows</p>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[#94A3B8] text-center">Every export is recorded in the activity log. Reports never include individual people's financial records.</p>
           </div>
-        </div>
-      )}
+        )}
+      </Loadable>
     </div>
   );
 }

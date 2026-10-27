@@ -1,195 +1,157 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { DEFAULT_SETTINGS, fetchAppSettings, saveAppSettings, useAppSettings } from "../../lib/appSettings";
+import type { AppSettings } from "../../lib/appSettings";
+import { fetchActivityLog, formatDateTime } from "../../lib/admin";
+import { SITE } from "../../lib/site";
+import { Button, Card, Loadable, PageHeader, useLoader, useToast } from "../../components/admin/ui";
 
-type ToggleProps = { label: string; description: string; value: boolean; onChange: (v: boolean) => void };
-function Toggle({ label, description, value, onChange }: ToggleProps) {
+function Row({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-4 border-b border-[#F1F5F9] last:border-0">
+    <div className="flex flex-col sm:flex-row sm:items-start gap-3 py-4 border-t border-[#F1F5F9] first:border-t-0 first:pt-0">
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-[#0F172A]">{label}</p>
-        <p className="text-xs text-[#64748B] mt-0.5">{description}</p>
+        <p className="text-sm font-semibold text-[#0F172A]">{title}</p>
+        <p className="text-xs text-[#64748B] mt-0.5 leading-relaxed">{desc}</p>
       </div>
-      <button onClick={() => onChange(!value)}
-        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${value ? "bg-[#2563EB]" : "bg-[#CBD5E1]"}`}>
-        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${value ? "translate-x-5" : "translate-x-0"}`} />
-      </button>
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden">
-      <div className="px-5 py-3.5 bg-[#F8FAFC] border-b border-[#E2E8F0]">
-        <h2 className="text-sm font-semibold text-[#0F172A]">{title}</h2>
-      </div>
-      <div className="px-5">{children}</div>
-    </div>
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}
+      className={`w-11 h-6 rounded-full relative transition-colors ${on ? "bg-[#2563EB]" : "bg-[#E2E8F0]"}`}>
+      <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow ${on ? "left-5" : "left-0.5"}`} />
+    </button>
   );
 }
 
-function Field({ label, description, value, onChange, type = "text" }: {
-  label: string; description?: string; value: string;
-  onChange: (v: string) => void; type?: string;
-}) {
-  return (
-    <div className="py-4 border-b border-[#F1F5F9] last:border-0">
-      <label className="block text-sm font-medium text-[#0F172A] mb-0.5">{label}</label>
-      {description && <p className="text-xs text-[#64748B] mb-2">{description}</p>}
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full max-w-sm border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]" />
-    </div>
-  );
-}
-
-function SelectField({ label, description, value, options, onChange }: {
-  label: string; description?: string; value: string;
-  options: { value: string; label: string }[]; onChange: (v: string) => void;
-}) {
-  return (
-    <div className="py-4 border-b border-[#F1F5F9] last:border-0">
-      <label className="block text-sm font-medium text-[#0F172A] mb-0.5">{label}</label>
-      {description && <p className="text-xs text-[#64748B] mb-2">{description}</p>}
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full max-w-sm border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2563EB]">
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
+async function load() {
+  const [settings, history] = await Promise.all([
+    fetchAppSettings(),
+    fetchActivityLog({ kind: "admin", search: "settings_changed", limit: 5 }).catch(() => ({ total: 0, rows: [] })),
+  ]);
+  return { settings, history };
 }
 
 export default function AdminSystemSettings() {
-  const [toast, setToast] = useState("");
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+  const { data, loading, error, reload } = useLoader(load);
+  const { refresh: refreshGlobal } = useAppSettings();
+  const [draft, setDraft] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [saving, setSaving] = useState(false);
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false);
+  const toast = useToast();
 
-  // Platform
-  const [platformName, setPlatformName] = useState("SmartBudget");
-  const [supportEmail, setSupportEmail] = useState("support@smartbudget.com");
-  const [timezone, setTimezone] = useState("UTC");
-  const [currency, setCurrency] = useState("AUD");
-  const [dateFormat, setDateFormat] = useState("DD/MM/YYYY");
+  useEffect(() => { if (data) setDraft(data.settings); }, [data]);
 
-  // Auth
-  const [requireEmailVerify, setRequireEmailVerify] = useState(true);
-  const [allowRegistration, setAllowRegistration] = useState(true);
-  const [sessionTimeout, setSessionTimeout] = useState("60");
-  const [maxFailedLogins, setMaxFailedLogins] = useState("5");
-  const [twoFactorAdmin, setTwoFactorAdmin] = useState(false);
+  const saved = data?.settings ?? DEFAULT_SETTINGS;
+  const changes = (Object.keys(draft) as (keyof AppSettings)[]).filter((k) => draft[k] !== saved[k]);
+  const set = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) => setDraft((d) => ({ ...d, [k]: v }));
 
-  // AI
-  const [aiEnabled, setAiEnabled] = useState(true);
-  const [aiRateLimit, setAiRateLimit] = useState("100");
-  const [aiSafetyFilter, setAiSafetyFilter] = useState(true);
-  const [aiDisclaimer, setAiDisclaimer] = useState(true);
+  const save = async () => {
+    if (draft.maintenance_mode && !saved.maintenance_mode && !confirmMaintenance) { setConfirmMaintenance(true); return; }
+    setConfirmMaintenance(false);
+    setSaving(true);
+    try {
+      const patch: Partial<AppSettings> = {};
+      for (const k of changes) (patch as Record<string, unknown>)[k] = draft[k];
+      await saveAppSettings(patch);
+      await refreshGlobal();
+      reload();
+      toast.show("Settings saved. They apply to the live site straight away.");
+    } catch (e) {
+      toast.show(e instanceof Error ? e.message : "Could not save.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  // Notifications
-  const [emailNotifs, setEmailNotifs] = useState(true);
-  const [securityAlerts, setSecurityAlerts] = useState(true);
-  const [weeklyDigest, setWeeklyDigest] = useState(false);
-
-  // Maintenance
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
+  const supabaseHost = (() => { try { return new URL(import.meta.env.VITE_SUPABASE_URL).host; } catch { return "not configured"; } })();
 
   return (
-    <div>
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F172A] text-white text-sm px-5 py-3 rounded-xl shadow-xl z-50 max-w-[90vw] text-center">{toast}</div>
-      )}
+    <div className="max-w-[900px]">
+      {toast.node}
+      <PageHeader title="Site Settings" sub="Switches that change the live site for everyone. Only Super Admins can change them, and every change is recorded."
+        actions={<>
+          {changes.length > 0 && <Button small variant="ghost" onClick={() => setDraft(saved)} disabled={saving}>Discard</Button>}
+          <Button variant="primary" onClick={() => void save()} disabled={!changes.length || saving}>{saving ? "Saving…" : changes.length ? `Save ${changes.length} change${changes.length === 1 ? "" : "s"}` : "Saved"}</Button>
+        </>} />
 
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A]">System Settings</h1>
-          <p className="text-sm text-[#64748B] mt-1">Configure platform-wide behaviour, authentication, AI, and notifications.</p>
-        </div>
-        <button onClick={() => showToast("✓ Saved for this session. These preview settings don't change the live app yet.")}
-          className="bg-[#2563EB] text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-[#1D4ED8] transition-colors">
-          Save All Changes
-        </button>
-      </div>
-
-      {maintenanceMode && (
-        <div className="flex items-center gap-3 bg-[#FEF3C7] border border-[#FDE68A] rounded-2xl px-5 py-4 mb-5">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#92400E" strokeWidth="2" strokeLinecap="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <p className="text-sm text-[#92400E] font-semibold">Maintenance mode is ON — the platform is unavailable to regular users.</p>
-        </div>
-      )}
-
-      <div className="space-y-5">
-        {/* Platform */}
-        <Section title="Platform">
-          <Field label="Platform Name" value={platformName} onChange={setPlatformName} />
-          <Field label="Support Email" value={supportEmail} onChange={setSupportEmail} type="email" />
-          <SelectField label="Timezone" description="Used for timestamps and scheduled jobs." value={timezone} onChange={setTimezone}
-            options={[{ value: "UTC", label: "UTC" }, { value: "Australia/Sydney", label: "Sydney (AEDT)" }, { value: "America/New_York", label: "New York (ET)" }, { value: "Europe/London", label: "London (GMT)" }]} />
-          <SelectField label="Currency" value={currency} onChange={setCurrency}
-            options={[{ value: "AUD", label: "AUD — Australian Dollar" }, { value: "USD", label: "USD — US Dollar" }, { value: "GBP", label: "GBP — British Pound" }, { value: "EUR", label: "EUR — Euro" }]} />
-          <SelectField label="Date Format" value={dateFormat} onChange={setDateFormat}
-            options={[{ value: "DD/MM/YYYY", label: "DD/MM/YYYY" }, { value: "MM/DD/YYYY", label: "MM/DD/YYYY" }, { value: "YYYY-MM-DD", label: "YYYY-MM-DD (ISO)" }]} />
-        </Section>
-
-        {/* Authentication */}
-        <Section title="Authentication">
-          <Toggle label="Allow New Registrations" description="When off, new users cannot create accounts." value={allowRegistration} onChange={setAllowRegistration} />
-          <Toggle label="Require Email Verification" description="New accounts must verify their email before accessing the platform." value={requireEmailVerify} onChange={setRequireEmailVerify} />
-          <Toggle label="Two-Factor Auth for Admins" description="Admins must complete 2FA on every login." value={twoFactorAdmin} onChange={setTwoFactorAdmin} />
-          <Field label="Session Timeout (minutes)" description="Sessions expire after this many minutes of inactivity." value={sessionTimeout} onChange={setSessionTimeout} type="number" />
-          <Field label="Max Failed Login Attempts" description="Account is temporarily locked after this many consecutive failures." value={maxFailedLogins} onChange={setMaxFailedLogins} type="number" />
-        </Section>
-
-        {/* AI */}
-        <Section title="AI Financial Assistant">
-          <div className="py-3 bg-[#F0F9FF] rounded-xl px-4 my-3 border border-[#BAE6FD]">
-            <p className="text-xs text-[#0369A1] leading-relaxed">
-              <strong>AI Constraint:</strong> The AI in this product must always be educational, never prescriptive: it explains patterns and concepts, drafts suggestions the user can edit, and never recommends specific investments, loans, credit products, or tax treatments.
-            </p>
+      {confirmMaintenance && (
+        <div className="mb-4 rounded-2xl border border-[#FDE68A] bg-[#FFFBEB] p-4 text-sm text-[#92400E]" role="alertdialog">
+          <p className="font-semibold">Turn on maintenance mode?</p>
+          <p className="mt-1">Everyone except staff will see the maintenance message and won't be able to use SmartBudget until you turn it off.</p>
+          <div className="flex gap-2 mt-3">
+            <Button small variant="primary" onClick={() => void save()}>Yes, turn it on</Button>
+            <Button small variant="ghost" onClick={() => setConfirmMaintenance(false)}>Cancel</Button>
           </div>
-          <Toggle label="Enable AI Assistant" description="When off, the Ask AI feature is hidden from all users." value={aiEnabled} onChange={setAiEnabled} />
-          <Toggle label="Safety Filter" description="Block prompt injection and jailbreak attempts. Highly recommended." value={aiSafetyFilter} onChange={setAiSafetyFilter} />
-          <Toggle label="Show Educational Disclaimer" description="Display the disclaimer before AI responses." value={aiDisclaimer} onChange={setAiDisclaimer} />
-          <Field label="Daily Message Limit per User" description="Maximum AI messages a single user can send per day." value={aiRateLimit} onChange={setAiRateLimit} type="number" />
-        </Section>
+        </div>
+      )}
 
-        {/* Notifications */}
-        <Section title="Notifications">
-          <Toggle label="Email Notifications" description="Send transactional emails (registration, password reset, etc.)." value={emailNotifs} onChange={setEmailNotifs} />
-          <Toggle label="Security Alerts" description="Email administrators when a critical security event is detected." value={securityAlerts} onChange={setSecurityAlerts} />
-          <Toggle label="Weekly Activity Digest" description="Send admins a weekly summary of platform activity." value={weeklyDigest} onChange={setWeeklyDigest} />
-        </Section>
+      <Loadable loading={loading} error={error} onRetry={reload}>
+        <div className="space-y-5">
+          <Card title="Access">
+            <Row title="Maintenance mode" desc="Shows a holding page to everyone except staff. Use it while you fix a problem or update the database.">
+              <Toggle on={draft.maintenance_mode} onChange={(v) => set("maintenance_mode", v)} label="Maintenance mode" />
+            </Row>
+            {draft.maintenance_mode && (
+              <div className="pb-4">
+                <label htmlFor="maint-msg" className="text-xs font-semibold text-[#475569]">Message shown to visitors</label>
+                <textarea id="maint-msg" rows={2} maxLength={300} value={draft.maintenance_message} onChange={(e) => set("maintenance_message", e.target.value)}
+                  className="mt-1 w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2563EB]" />
+              </div>
+            )}
+            <Row title="Allow new sign-ups" desc="When off, the sign-up page says sign-ups are closed and the database refuses new accounts. Existing users can still sign in.">
+              <Toggle on={draft.signups_enabled} onChange={(v) => set("signups_enabled", v)} label="Allow new sign-ups" />
+            </Row>
+          </Card>
 
-        {/* Maintenance */}
-        <Section title="Maintenance">
-          <Toggle label="Maintenance Mode" description="Take the platform offline for all non-admin users. Enable before running major updates." value={maintenanceMode} onChange={setMaintenanceMode} />
-          <Toggle label="Debug Logging" description="Write verbose logs to the server console. Disable in production." value={debugMode} onChange={setDebugMode} />
-          <div className="py-4">
-            <p className="text-sm font-medium text-[#0F172A] mb-2">Danger Zone</p>
-            <div className="flex gap-3 flex-wrap">
-              <button onClick={() => showToast("Cache cleared (prototype)")}
-                className="text-sm font-semibold text-[#F97316] border border-[#FED7AA] bg-[#FFF7ED] px-4 py-2 rounded-xl hover:bg-[#FFEDD5] transition-colors">
-                Clear Cache
-              </button>
-              <button onClick={() => showToast("Backup triggered (prototype)")}
-                className="text-sm font-semibold text-[#0891B2] border border-[#A5F3FC] bg-[#ECFEFF] px-4 py-2 rounded-xl hover:bg-[#CFFAFE] transition-colors">
-                Trigger Manual Backup
-              </button>
-              <button onClick={() => showToast("Resetting data is not available in this prototype.")}
-                className="text-sm font-semibold text-[#EF4444] border border-[#FECACA] bg-[#FEF2F2] px-4 py-2 rounded-xl hover:bg-[#FEE2E2] transition-colors">
-                Reset Platform Data…
-              </button>
+          <Card title="Features">
+            <Row title="AI assistant" desc="Shows the Ask AI page and the chat button for users. Turn off to hide both.">
+              <Toggle on={draft.assistant_enabled} onChange={(v) => set("assistant_enabled", v)} label="AI assistant" />
+            </Row>
+          </Card>
+
+          <Card title="Announcement banner">
+            <Row title="Show an announcement" desc="A message bar at the top of the app for every signed-in user, e.g. planned downtime or a new feature. People can dismiss it.">
+              <Toggle on={draft.announcement_enabled} onChange={(v) => set("announcement_enabled", v)} label="Show announcement" />
+            </Row>
+            <div className="pb-1">
+              <label htmlFor="ann" className="text-xs font-semibold text-[#475569]">Announcement text</label>
+              <textarea id="ann" rows={2} maxLength={300} value={draft.announcement} onChange={(e) => set("announcement", e.target.value)}
+                placeholder="e.g. New: export your data as a PDF from Settings › Privacy."
+                className="mt-1 w-full border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2563EB]" />
+              <p className="text-[11px] text-[#94A3B8] mt-1">{draft.announcement.length}/300</p>
+              {draft.announcement_enabled && draft.announcement.trim() && (
+                <div className="mt-2 bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl px-3 py-2 text-sm text-[#1E40AF]">Preview: {draft.announcement}</div>
+              )}
             </div>
-          </div>
-        </Section>
+          </Card>
 
-        {/* Disclaimer */}
-        <div className="bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0] p-5">
-          <p className="text-xs font-semibold text-[#475569] uppercase tracking-wide mb-2">Platform Disclaimer</p>
-          <p className="text-xs text-[#64748B] leading-relaxed">
-            This platform provides educational information and budgeting tools only. It does not provide personalised financial, investment, tax, legal, insurance, or credit advice.
-          </p>
+          <Card title="Platform information">
+            <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+              <div><dt className="text-xs text-[#94A3B8]">Database</dt><dd className="text-[#0F172A] font-mono text-xs break-all">{supabaseHost}</dd></div>
+              <div><dt className="text-xs text-[#94A3B8]">Site address</dt><dd className="text-[#0F172A] break-all">{window.location.origin}</dd></div>
+              <div><dt className="text-xs text-[#94A3B8]">Support email</dt><dd className="text-[#0F172A] break-all">{SITE.supportEmail}</dd></div>
+              <div><dt className="text-xs text-[#94A3B8]">Backups</dt><dd className="text-[#0F172A]">Managed by Supabase (Database › Backups in the Supabase dashboard)</dd></div>
+            </dl>
+          </Card>
+
+          <Card title="Recent setting changes">
+            {data?.history.rows.length ? (
+              <ul className="space-y-2.5">
+                {data.history.rows.map((r, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="font-medium text-[#0F172A]">{r.who}</span>{" "}
+                    <span className="text-[#475569]">changed {Object.keys(r.details ?? {}).map((k) => k.replace(/_/g, " ")).join(", ")}</span>
+                    <span className="block text-xs text-[#94A3B8]">{formatDateTime(r.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="text-sm text-[#94A3B8]">No changes yet.</p>}
+          </Card>
         </div>
-      </div>
+      </Loadable>
     </div>
   );
 }

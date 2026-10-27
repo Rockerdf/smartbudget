@@ -82,9 +82,12 @@ function Modal({
 export default function Register({
   navigate,
   onSuccess,
+  signupsOpen = true,
 }: {
   navigate: (s: Screen) => void;
   onSuccess: (user: UserSession) => void;
+  /** False while an administrator has closed new sign-ups. */
+  signupsOpen?: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -155,6 +158,24 @@ export default function Register({
       setErrors({ email: message });
     }
   };
+
+  if (!signupsOpen && !success) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl p-8 sm:p-10 text-center card-shadow max-w-md w-full border border-[#E2E8F0]">
+          <div className="w-14 h-14 rounded-2xl bg-[#EFF6FF] mx-auto flex items-center justify-center mb-4" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h1 className="text-xl font-bold text-[#0F172A]">Sign-ups are closed for now</h1>
+          <p className="text-sm text-[#64748B] mt-2">We're not accepting new accounts at the moment. Please check back soon. If you already have an account, you can sign in.</p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center mt-6">
+            <button type="button" onClick={() => navigate("login")} className="bg-[#2563EB] text-white font-semibold text-sm px-5 py-2.5 rounded-xl hover:bg-[#1D4ED8]">Sign in</button>
+            <button type="button" onClick={() => navigate("landing")} className="text-sm font-semibold text-[#475569] px-5 py-2.5 rounded-xl hover:bg-[#F1F5F9]">Back to home</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (success) {
     const needsConfirm = success === "confirm_email";

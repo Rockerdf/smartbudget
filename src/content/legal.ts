@@ -85,8 +85,8 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
           list(
             "Account details: your name, email address and an encrypted password (managed by our authentication provider, so we never see your password).",
             "Financial records you choose to enter: transactions, categories, budgets, savings goals and notes.",
-            "Account activity: when your account was created and when you last signed in.",
-            "Preferences stored in your browser: theme (light or dark), notification choices, lesson progress and whether the demo bank is connected.",
+            "Account activity: when your account was created, your Education Hub lesson progress, and a security record of sign-ins (successful and failed), sign-outs and password-reset requests, including the IP address and browser used.",
+            "Preferences stored in your browser: theme (light or dark), notification choices and whether the demo bank is connected.",
           ),
           p("We do not ask for, and you should never enter, real bank usernames, passwords, card numbers or tax file numbers."),
         ],
@@ -98,7 +98,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
             "To create and secure your account and let you sign in.",
             "To show your dashboard, budgets, goals, charts, insights and notifications.",
             "To send account emails you request, such as password-reset links.",
-            "To keep the service working, prevent misuse and fix problems.",
+            "To keep the service working, detect suspicious sign-in attempts, prevent misuse and fix problems.",
           ),
           p("We do not sell your personal information, show you advertising, or use your data to make credit decisions."),
         ],
@@ -114,7 +114,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
         id: "share", heading: "5. Who we share it with",
         blocks: [
           p("We only share information with service providers that help us run the app (database, authentication, email delivery and hosting), and only as needed for them to provide that service. We may also disclose information if the law requires it."),
-          p("Support and admin staff of the project can see basic account details (name, email, role and status) to help users and keep the service safe. They cannot see your password."),
+          p("Support and admin staff of the project can see basic account details (name, email, role, status and sign-in history) to help users and keep the service safe. They cannot see your password, and they never see your individual transactions, budgets or goals. Staff reports only show combined totals across all users (for example, the number of transactions recorded each month), and spending categories are only shown when at least three different people have used them."),
         ],
       },
       {
@@ -131,7 +131,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
       {
         id: "retention", heading: "7. How long we keep it",
         blocks: [
-          p("We keep your information while your account is open. When you delete your account, your profile, transactions, budgets and goals are deleted from the database. Backups held by our providers are removed on their normal schedule."),
+          p("We keep your information while your account is open. When you delete your account, your profile, transactions, budgets, goals and lesson progress are deleted from the database. Security records of sign-ins and staff actions are kept for up to 12 months to protect the service, then deleted. Backups held by our providers are removed on their normal schedule."),
         ],
       },
       {
@@ -274,7 +274,6 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
           list(
             "Light or dark theme.",
             "Which notifications you have read or dismissed, and which kinds you want to see.",
-            "Education Hub lesson progress.",
             "Whether the demo bank is connected, and your privacy consent choices.",
           ),
           p("This information stays in your browser and is not sent to us."),

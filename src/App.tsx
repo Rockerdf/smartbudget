@@ -23,7 +23,9 @@ import Notifications from "./screens/Notifications";
 import Onboarding from "./screens/Onboarding";
 import InfoPage from "./screens/InfoPage";
 import Contact from "./screens/Contact";
-import { PublicShell } from "./components/SiteChrome";
+import { PublicShell, Logo } from "./components/SiteChrome";
+import { useAppSettings } from "./lib/appSettings";
+import { SITE } from "./lib/site";
 import { INFO_PATHS } from "./content/legal";
 import type { InfoKey } from "./content/legal";
 import AppLayout, { PageSkeleton } from "./components/AppLayout";
@@ -89,7 +91,30 @@ function screenFromPath(pathname: string): Screen | null {
   return PATH_TO_INFO[clean] ?? EXTRA_PATHS[clean] ?? null;
 }
 
+/** Shown to everyone except staff while an administrator has turned on maintenance mode. */
+function MaintenanceScreen({ message, signedIn, onSignIn, onSignOut }: {
+  message: string; signedIn: boolean; onSignIn: () => void; onSignOut: () => void;
+}) {
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6">
+      <div className="bg-white rounded-3xl border border-[#E2E8F0] card-shadow-md p-8 sm:p-10 max-w-lg w-full text-center">
+        <div className="flex justify-center mb-6"><Logo /></div>
+        <div className="w-14 h-14 rounded-2xl bg-[#FEF3C7] mx-auto flex items-center justify-center mb-4" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        </div>
+        <h1 className="text-2xl font-bold text-[#0F172A]">We'll be back soon</h1>
+        <p className="mt-3 text-[#475569] leading-relaxed">{message}</p>
+        <p className="mt-4 text-sm text-[#94A3B8]">Questions? Email <a href={`mailto:${SITE.supportEmail}`} className="text-[#2563EB] underline">{SITE.supportEmail}</a></p>
+        <button type="button" onClick={signedIn ? onSignOut : onSignIn} className="mt-6 text-sm font-semibold text-[#2563EB] hover:underline">
+          {signedIn ? "Sign out" : "Staff sign in"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const { settings } = useAppSettings();
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("sb_theme") === "dark");
 
   useEffect(() => {
@@ -282,6 +307,19 @@ export default function App() {
     );
   }
 
+  // ── Maintenance mode: everyone except staff sees a holding page ─────────────
+  const isStaff = !!currentUser && ADMIN_PANEL_ROLES.includes(currentUser.role);
+  if (settings.maintenance_mode && !isStaff && screen !== "login" && !isInfoScreen(screen)) {
+    return (
+      <MaintenanceScreen
+        message={settings.maintenance_message}
+        signedIn={!!currentUser}
+        onSignIn={() => navigate("login")}
+        onSignOut={handleLogout}
+      />
+    );
+  }
+
   // ── Public pages (legal, contact, and the Help Center when signed out) ───────
   if (isInfoScreen(screen) || (screen === "helpCenter" && !currentUser)) {
     return (
@@ -304,7 +342,7 @@ export default function App() {
     return (
       <div className={cx}>
         {screen !== "register" && screen !== "login" && <Landing navigate={navigate} />}
-        {screen === "register" && <Register navigate={navigate} onSuccess={handleRegisterSuccess} />}
+        {screen === "register" && <Register navigate={navigate} onSuccess={handleRegisterSuccess} signupsOpen={settings.signups_enabled} />}
         {screen === "login"    && <Login    navigate={navigate} onSuccess={handleLoginSuccess} />}
       </div>
     );
@@ -358,12 +396,12 @@ export default function App() {
         userRole={currentUser.role}
       >
         <div className={cx} key={screen}>
-          {screen === "adminDashboard"      && <AdminDashboard />}
+          {screen === "adminDashboard"      && <AdminDashboard navigate={navigate} role={currentUser.role} />}
           {screen === "adminUsers"          && <AdminUsers currentUserRole={currentUser.role} currentUserEmail={currentUser.email} />}
-          {screen === "adminRoles"          && <AdminRoles />}
+          {screen === "adminRoles"          && <AdminRoles navigate={navigate} />}
           {screen === "adminReports"        && <AdminReports />}
           {screen === "adminContent"        && <AdminContent />}
-          {screen === "adminSecurity"       && <AdminSecurityCenter />}
+          {screen === "adminSecurity"       && <AdminSecurityCenter navigate={navigate} />}
           {screen === "adminAuditLogs"      && <AdminAuditLogs />}
           {screen === "adminSystemSettings" && <AdminSystemSettings />}
         </div>
@@ -377,6 +415,8 @@ export default function App() {
       screen={screen} navigate={navigate} onLogout={handleLogout}
       userName={userName} userRole="user"
       darkMode={darkMode} onToggleDark={() => setDarkMode((d) => !d)}
+      assistantEnabled={settings.assistant_enabled}
+      announcement={settings.announcement_enabled ? settings.announcement : ""}
     >
       {transitioning ? <PageSkeleton /> : (
         <div className={cx} key={screen}>
@@ -386,7 +426,16 @@ export default function App() {
           {screen === "savings"      && <SavingsGoals navigate={navigate} />}
           {screen === "education"    && <EducationHub navigate={navigate} />}
           {screen === "analytics"    && <Analytics navigate={navigate} userId={currentUser.userId} refreshKey={txRevision} />}
-          {screen === "ask"          && <Ask />}
+          {screen === "ask"          && (settings.assistant_enabled ? <Ask /> : (
+            <div className="p-6 lg:p-8 max-w-xl">
+              <h1 className="text-xl font-bold text-[#0F172A]">Ask AI is turned off</h1>
+              <p className="text-sm text-[#64748B] mt-2">The assistant has been switched off by an administrator for now. You can still browse the Learn section or the Help Center.</p>
+              <div className="flex gap-2 mt-4">
+                <button type="button" onClick={() => navigate("education")} className="text-sm font-semibold text-white bg-[#2563EB] px-4 py-2 rounded-xl">Go to Learn</button>
+                <button type="button" onClick={() => navigate("helpCenter")} className="text-sm font-semibold text-[#2563EB] border border-[#BFDBFE] px-4 py-2 rounded-xl">Help Center</button>
+              </div>
+            </div>
+          ))}
           {screen === "healthScore"  && <HealthScore navigate={navigate} />}
           {screen === "helpCenter"   && <HelpCenter navigate={navigate} />}
           {screen === "notifications" && <Notifications navigate={navigate} />}
@@ -403,7 +452,7 @@ export default function App() {
           )}
         </div>
       )}
-      <SmartBudgetAssistant navigate={navigate} userName={userName} screen={screen} />
+      {settings.assistant_enabled && <SmartBudgetAssistant navigate={navigate} userName={userName} screen={screen} />}
     </AppLayout>
   );
 }

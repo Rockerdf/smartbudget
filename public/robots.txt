@@ -1,3 +1,4 @@
 User-agent: *
-Disallow: /
-# Prototype: change to "Allow: /" (and remove the robots meta tag in index.html) when ready to be indexed.
+Allow: /
+
+Sitemap: https://smartbudget-sable-rho.vercel.app/sitemap.xml

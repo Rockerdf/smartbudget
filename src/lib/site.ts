@@ -1,19 +1,19 @@
 // Site-wide details used by the footer, legal pages, Help Center and Contact page.
-// Change them here and every page updates. Replace the placeholder email with a
-// real inbox before you share the site publicly.
+// Change them here and every page updates. Contact emails below are shown publicly on the
+// Contact, Help and legal pages.
 
 export const SITE = {
   name: "SmartBudget",
   tagline: "Financial wellness for everyone",
   /** Who runs the site. Shown on the legal pages. */
   operator: "the SmartBudget student project team",
-  /** Placeholder address. Messages sent from the site open the visitor's email app addressed to this. */
-  supportEmail: "support@smartbudget.example",
-  privacyEmail: "privacy@smartbudget.example",
+  /** Contact address. Messages sent from the site open the visitor's email app addressed to this. */
+  supportEmail: "karkimichael3@gmail.com",
+  privacyEmail: "karkimichael3@gmail.com",
   country: "Australia",
   supportHours: "Monday to Friday, 9 am – 5 pm AEST (Sydney time)",
   /** Date shown as "Last updated" on the legal pages. */
-  legalUpdated: "26 October 2026",
+  legalUpdated: "27 October 2026",
   year: 2026,
 } as const;
 

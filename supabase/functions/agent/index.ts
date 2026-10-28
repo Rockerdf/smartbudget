@@ -17,8 +17,10 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const GEMINI_BASE = Deno.env.get("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com";
-const MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
-const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"];
+const MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-flash-lite-latest";
+// "Lite" is Google's fastest, least crowded model and handles this app's tasks well;
+// the full Flash model is the backup. (Gemini 2.5 models are closed to new projects.)
+const FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 // Supabase stops a function after about 150 seconds, so every reply must finish well before that.
 const TOTAL_BUDGET_MS = 110_000;
 const CALL_TIMEOUT_MS = 30_000;
@@ -855,6 +857,7 @@ async function fileParts(ctx: Ctx, key: string, f: FileRef, budget: { inline: nu
 // messages don't wait on them again. (Lives as long as this function instance.)
 const busyUntil = new Map<string, number>();
 const BUSY_FOR_MS = 3 * 60_000;
+const noThinkingLevel = new Set<string>();
 const busyModels = {
   has: (m: string) => (busyUntil.get(m) ?? 0) > Date.now(),
   add: (m: string) => { busyUntil.set(m, Date.now() + BUSY_FOR_MS); },
@@ -874,8 +877,9 @@ async function callGemini(key: string, body: any, deadline: number, stop?: Abort
     const timer = setTimeout(() => ctrl.abort(), Math.min(CALL_TIMEOUT_MS, left - 2000));
     const onStop = () => ctrl.abort();
     stop?.addEventListener("abort", onStop);
-    // Gemini 2.5 models answer much faster with little or no "thinking".
-    const payload = /2\.5/.test(model) ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: { thinkingBudget: 0 } } } : body;
+    // Less "thinking" = much faster replies. Newer models use thinkingLevel, 2.5 models thinkingBudget.
+    const thinking = /2\.5/.test(model) ? { thinkingBudget: 0 } : noThinkingLevel.has(model) ? null : { thinkingLevel: "low" };
+    const payload = thinking ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: thinking } } : body;
     let res: Response;
     try {
       res = await fetch(`${GEMINI_BASE}/v1beta/models/${model}:generateContent`, {
@@ -905,8 +909,14 @@ async function callGemini(key: string, body: any, deadline: number, stop?: Abort
     console.error("gemini", model, res.status, text.slice(0, 500));
     if (res.status === 400 && /API key/i.test(text)) throw new UserError("The AI key on the server is not valid. An administrator needs to update GEMINI_API_KEY.");
     if (res.status === 403) throw new UserError(`The AI key on the server was refused (${lastMsg}). An administrator needs to check GEMINI_API_KEY.`);
+    if (res.status === 400 && /thinking/i.test(text) && !noThinkingLevel.has(model)) {
+      // This model doesn't accept the speed setting: retry it once without.
+      noThinkingLevel.add(model);
+      return callGemini(key, body, deadline, stop);
+    }
     if (res.status === 400) throw new UserError(`The AI couldn't handle that request: ${lastMsg}`);
-    busyModels.add(model); // 404 / 429 / 5xx: try the next model
+    if (res.status === 404) busyUntil.set(model, Infinity); // this model doesn't exist for this key
+    else busyModels.add(model); // 429 / 5xx: try the next model
   }
   if (lastStatus === 429) throw new UserError("The AI has hit its free usage limit for the moment. Please wait a minute and try again.");
   if (lastStatus === 503 || lastMsg === "took too long") throw new UserError("Google's AI is very busy right now and didn't answer in time. Please try again in a minute.");

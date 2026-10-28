@@ -53,7 +53,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
             "Create savings goals with target dates and track progress.",
             "See charts of your spending trends and a simple Financial Health Score.",
             "Learn with short lessons, curated videos and recommended books in the Education Hub.",
-            "Ask the built-in assistant to explain budgeting concepts.",
+            "Ask the AI agent anything, or have it record receipts, import statements and manage budgets and goals for you.",
           ),
         ],
       },
@@ -86,6 +86,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
             "Account details: your name, email address and an encrypted password (managed by our authentication provider, so we never see your password).",
             "Financial records you choose to enter: transactions, categories, budgets, savings goals and notes.",
             "Account activity: when your account was created, your Education Hub lesson progress, and a security record of sign-ins (successful and failed), sign-outs and password-reset requests, including the IP address and browser used.",
+            "If you use the AI agent: your messages, its replies, and any files you upload (for example receipt photos, statements, spreadsheets or videos). Files are kept in private storage that only you can open.",
             "Preferences stored in your browser: theme (light or dark), notification choices and whether the demo bank is connected.",
           ),
           p("We do not ask for, and you should never enter, real bank usernames, passwords, card numbers or tax file numbers."),
@@ -98,6 +99,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
             "To create and secure your account and let you sign in.",
             "To show your dashboard, budgets, goals, charts, insights and notifications.",
             "To send account emails you request, such as password-reset links.",
+            "To run the AI agent: answer your questions and carry out the tasks you ask for, such as recording a receipt as a transaction.",
             "To keep the service working, detect suspicious sign-in attempts, prevent misuse and fix problems.",
           ),
           p("We do not sell your personal information, show you advertising, or use your data to make credit decisions."),
@@ -114,6 +116,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
         id: "share", heading: "5. Who we share it with",
         blocks: [
           p("We only share information with service providers that help us run the app (database, authentication, email delivery and hosting), and only as needed for them to provide that service. We may also disclose information if the law requires it."),
+          p("AI agent: when you send the agent a message, that message, recent messages in the same chat, any files you attach, and the records the agent looks up to answer you (for example your transactions for a month) are sent to Google's Gemini API to produce the reply. This project uses Google's free tier, under which Google may keep and use this content to improve its products, and it may be processed outside Australia. Do not upload documents containing passwords, full card numbers or identity documents. If you don't want your information sent to Google, don't use the AI agent; the rest of SmartBudget works without it."),
           p("Support and admin staff of the project can see basic account details (name, email, role, status and sign-in history) to help users and keep the service safe. They cannot see your password, and they never see your individual transactions, budgets or goals. Staff reports only show combined totals across all users (for example, the number of transactions recorded each month), and spending categories are only shown when at least three different people have used them."),
         ],
       },
@@ -122,7 +125,8 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
         blocks: [
           list(
             "View and update your name in Settings › Profile.",
-            "Download your data at any time from Settings › Privacy (CSV or a printable report).",
+            "Download your data at any time from Settings › Privacy (CSV or a printable report), including your AI agent chats.",
+            "Delete any AI agent chat (and the files in it) from the chat list on the AI Agent page.",
             "Delete your account and all associated records from Settings › Privacy › Delete Account. This cannot be undone.",
             `Ask us to access or correct your information by emailing ${SITE.privacyEmail}.`,
           ),
@@ -131,7 +135,7 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
       {
         id: "retention", heading: "7. How long we keep it",
         blocks: [
-          p("We keep your information while your account is open. When you delete your account, your profile, transactions, budgets, goals and lesson progress are deleted from the database. Security records of sign-ins and staff actions are kept for up to 12 months to protect the service, then deleted. Backups held by our providers are removed on their normal schedule."),
+          p("We keep your information while your account is open. When you delete your account, your profile, transactions, budgets, goals, lesson progress, AI agent chats and uploaded files are deleted. AI usage counters are kept for 2 days. Security records of sign-ins and staff actions are kept for up to 12 months to protect the service, then deleted. Backups held by our providers are removed on their normal schedule."),
         ],
       },
       {
@@ -231,8 +235,8 @@ export const INFO_PAGES: Record<Exclude<InfoKey, "contact">, InfoPageContent> = 
         blocks: [p("Budgets, charts, insights, savings projections and the Financial Health Score are simple calculations based only on the information you enter. They may be incomplete or inaccurate and are not a credit score or an official assessment of your finances.")],
       },
       {
-        id: "assistant", heading: "The AI assistant",
-        blocks: [p("The assistant gives rule-based educational explanations. It can make mistakes, does not know your full circumstances and cannot carry out transactions. Do not rely on it for decisions about money.")],
+        id: "assistant", heading: "The AI agent",
+        blocks: [p("The AI agent uses Google Gemini to answer questions and to record, change or delete information in your own SmartBudget account when you ask it to. It can misread receipts or misunderstand requests, so check what it records; anything that deletes data waits for your approval. It does not know your full circumstances, cannot move real money, and its answers are general educational information, not financial advice.")],
       },
       {
         id: "bank", heading: "Demo bank connection",

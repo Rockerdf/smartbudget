@@ -13,7 +13,7 @@ import Budget from "./screens/Budget";
 import SavingsGoals from "./screens/SavingsGoals";
 import EducationHub from "./screens/EducationHub";
 import Analytics from "./screens/Analytics";
-import Ask from "./screens/Ask";
+import Agent from "./screens/Agent";
 import Settings from "./screens/Settings";
 import BankConnect from "./screens/BankConnect";
 import AccessDenied from "./screens/AccessDenied";
@@ -29,7 +29,6 @@ import { SITE } from "./lib/site";
 import { INFO_PATHS } from "./content/legal";
 import type { InfoKey } from "./content/legal";
 import AppLayout, { PageSkeleton } from "./components/AppLayout";
-import SmartBudgetAssistant from "./components/SmartBudgetAssistant";
 import { DEMO_ACCOUNT, loadDemoConnection, saveDemoConnection } from "./lib/demoBank";
 import { removeDemoTransactions } from "./lib/demoBankActions";
 import AdminLayout from "./components/AdminLayout";
@@ -44,10 +43,10 @@ import AdminSystemSettings from "./screens/admin/SystemSettings";
 
 export type Screen =
   | "landing" | "register" | "login" | "bankConnect" | "accessDenied" | "onboarding"
-  | "dashboard" | "transactions" | "budget" | "savings" | "education" | "analytics" | "ask" | "settings"
+  | "dashboard" | "agent" | "transactions" | "budget" | "savings" | "education" | "analytics" | "settings"
   | "healthScore" | "helpCenter" | "notifications"
   | InfoKey
-  | "adminDashboard" | "adminUsers" | "adminRoles" | "adminReports"
+  | "adminDashboard" | "adminAgent" | "adminUsers" | "adminRoles" | "adminReports"
   | "adminContent" | "adminSecurity" | "adminAuditLogs" | "adminSystemSettings";
 
 export type ConnectedAccount = {
@@ -63,10 +62,10 @@ export type ConnectedAccount = {
 const DEPTH: Record<Screen, number> = {
   landing: 0, register: 1, login: 1, bankConnect: 1, accessDenied: 1, onboarding: 1,
   dashboard: 2, transactions: 3, budget: 3, savings: 3,
-  education: 3, analytics: 3, ask: 3, settings: 3,
+  education: 3, analytics: 3, agent: 3, settings: 3,
   healthScore: 3, helpCenter: 3, notifications: 3,
   about: 1, contact: 1, privacy: 1, terms: 1, disclaimer: 1, cookies: 1, accessibility: 1, security: 1,
-  adminDashboard: 1, adminUsers: 1, adminRoles: 1, adminReports: 1,
+  adminDashboard: 1, adminAgent: 1, adminUsers: 1, adminRoles: 1, adminReports: 1,
   adminContent: 1, adminSecurity: 1, adminAuditLogs: 1, adminSystemSettings: 1,
 };
 
@@ -395,8 +394,9 @@ export default function App() {
         userName={userName}
         userRole={currentUser.role}
       >
-        <div className={cx} key={screen}>
+        <div className={`${cx} ${screen === "adminAgent" ? "h-full" : ""}`} key={screen}>
           {screen === "adminDashboard"      && <AdminDashboard navigate={navigate} role={currentUser.role} />}
+          {screen === "adminAgent"          && <Agent navigate={navigate} userName={userName} role={currentUser.role} />}
           {screen === "adminUsers"          && <AdminUsers currentUserRole={currentUser.role} currentUserEmail={currentUser.email} />}
           {screen === "adminRoles"          && <AdminRoles navigate={navigate} />}
           {screen === "adminReports"        && <AdminReports />}
@@ -419,19 +419,19 @@ export default function App() {
       announcement={settings.announcement_enabled ? settings.announcement : ""}
     >
       {transitioning ? <PageSkeleton /> : (
-        <div className={cx} key={screen}>
+        <div className={`${cx} ${screen === "agent" ? "h-full" : ""}`} key={screen}>
           {screen === "dashboard"    && <Dashboard navigate={navigate} userName={userName} userId={currentUser.userId} refreshKey={txRevision} />}
           {screen === "transactions" && <Transactions navigate={navigate} userId={currentUser.userId} />}
           {screen === "budget"       && <Budget navigate={navigate} />}
           {screen === "savings"      && <SavingsGoals navigate={navigate} />}
           {screen === "education"    && <EducationHub navigate={navigate} />}
           {screen === "analytics"    && <Analytics navigate={navigate} userId={currentUser.userId} refreshKey={txRevision} />}
-          {screen === "ask"          && (settings.assistant_enabled ? <Ask /> : (
+          {screen === "agent"        && (settings.assistant_enabled ? <Agent navigate={navigate} userName={userName} role={currentUser.role} /> : (
             <div className="p-6 lg:p-8 max-w-xl">
-              <h1 className="text-xl font-bold text-[#0F172A]">Ask AI is turned off</h1>
-              <p className="text-sm text-[#64748B] mt-2">The assistant has been switched off by an administrator for now. You can still browse the Learn section or the Help Center.</p>
+              <h1 className="text-xl font-bold text-[#0F172A]">The AI agent is turned off</h1>
+              <p className="text-sm text-[#64748B] mt-2">An administrator has switched the AI agent off for now. You can still add transactions yourself, browse Learn or visit the Help Center.</p>
               <div className="flex gap-2 mt-4">
-                <button type="button" onClick={() => navigate("education")} className="text-sm font-semibold text-white bg-[#2563EB] px-4 py-2 rounded-xl">Go to Learn</button>
+                <button type="button" onClick={() => navigate("transactions")} className="text-sm font-semibold text-white bg-[#2563EB] px-4 py-2 rounded-xl">Transactions</button>
                 <button type="button" onClick={() => navigate("helpCenter")} className="text-sm font-semibold text-[#2563EB] border border-[#BFDBFE] px-4 py-2 rounded-xl">Help Center</button>
               </div>
             </div>
@@ -452,7 +452,6 @@ export default function App() {
           )}
         </div>
       )}
-      {settings.assistant_enabled && <SmartBudgetAssistant navigate={navigate} userName={userName} screen={screen} />}
     </AppLayout>
   );
 }

@@ -31,6 +31,10 @@ const NAV_ITEMS: NavItem[] = [
     icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
   },
   {
+    label: "AI Agent", screen: "adminAgent",
+    icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5l-2.2-6.3L3.5 10l6.3-1.7z"/><path d="M19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z" opacity=".7"/></svg>,
+  },
+  {
     label: "Users", screen: "adminUsers",
     icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   },
@@ -144,7 +148,7 @@ function AdminProfileDropdown({ userName, userRole, onLogout }: {
 // ── Section separator for nav ─────────────────────────────────────────────────
 
 const NAV_SECTIONS: { heading: string; screens: AdminScreen[] }[] = [
-  { heading: "Overview",    screens: ["adminDashboard"] },
+  { heading: "Overview",    screens: ["adminDashboard", "adminAgent"] },
   { heading: "Management",  screens: ["adminUsers", "adminRoles"] },
   { heading: "Analytics",   screens: ["adminReports", "adminContent"] },
   { heading: "Platform",    screens: ["adminSecurity", "adminAuditLogs", "adminSystemSettings"] },
@@ -272,7 +276,7 @@ export default function AdminLayout({
             <AdminProfileDropdown userName={userName} userRole={userRole} onLogout={onLogout} />
           </div>
         </header>
-        <main ref={mainRef} className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28">{children}</main>
+        <main ref={mainRef} className={screen === "adminAgent" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto p-4 sm:p-6 pb-28"}>{children}</main>
       </div>
     </div>
   );

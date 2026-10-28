@@ -5,6 +5,7 @@ import { subscribeTransactionsChanged } from "../lib/transactions";
 
 const navItems = [
   { id: "dashboard",    label: "Dashboard",   icon: GridIcon },
+  { id: "agent",        label: "AI Agent",    icon: SparkleIcon },
   { id: "transactions", label: "Transactions", icon: ReceiptIcon },
   { id: "budget",       label: "Budget",       icon: SliderIcon },
   { id: "savings",      label: "Savings",      icon: PiggyIcon },
@@ -12,7 +13,6 @@ const navItems = [
   { id: "healthScore", label: "Health Score", icon: HeartIcon },
   { id: "education",   label: "Learn",        icon: BookIcon },
   { id: "helpCenter",  label: "Help",         icon: HelpIcon },
-  { id: "ask",         label: "Ask AI",       icon: SparkleIcon },
   { id: "settings",   label: "Settings",     icon: GearIcon },
 ] as const;
 
@@ -268,7 +268,7 @@ function TopHeader({
 }
 
 export default function AppLayout({ screen, navigate, onLogout, children, userName = "User", userRole = "user", darkMode = false, onToggleDark, assistantEnabled = true, announcement = "" }: Props) {
-  const items = navItems.filter((n) => assistantEnabled || n.id !== "ask");
+  const items = navItems.filter((n) => assistantEnabled || n.id !== "agent");
   // Start each screen at the top instead of keeping the previous page's scroll position.
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [screen]);
@@ -301,7 +301,7 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
               >
                 <Icon size={18} active={active} />
                 {label}
-                {id === "ask" && (
+                {id === "agent" && (
                   <span className="ml-auto text-[9px] font-bold bg-[#2563EB] text-white px-1.5 py-0.5 rounded-full">AI</span>
                 )}
               </button>
@@ -344,7 +344,7 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
         <TopHeader screen={screen} userName={userName} userRole={userRole} navigate={navigate} onLogout={onLogout} darkMode={darkMode} onToggleDark={onToggleDark} />
 
         <AnnouncementBar text={announcement} />
-        <main ref={mainRef} className="flex-1 overflow-y-auto pb-20 md:pb-0 relative">
+        <main ref={mainRef} className={screen === "agent" ? "flex-1 min-h-0 overflow-hidden relative pb-[calc(58px+env(safe-area-inset-bottom))] md:pb-0" : "flex-1 overflow-y-auto pb-20 md:pb-0 relative"}>
           {children}
         </main>
       </div>
@@ -355,12 +355,12 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
 }
 
 // ---- Mobile bottom nav: four main sections plus a "More" sheet with the rest ----
-const MOBILE_PRIMARY = ["dashboard", "transactions", "budget", "savings"] as const;
+const MOBILE_PRIMARY = ["dashboard", "agent", "transactions", "budget"] as const;
 
 function MobileNav({ screen, navigate, onLogout, hideAsk = false }: { screen: Screen; navigate: (s: Screen) => void; onLogout: () => void; hideAsk?: boolean }) {
   const [open, setOpen] = useState(false);
-  const primary = navItems.filter((n) => (MOBILE_PRIMARY as readonly string[]).includes(n.id));
-  const rest = navItems.filter((n) => !(MOBILE_PRIMARY as readonly string[]).includes(n.id) && !(hideAsk && n.id === "ask"));
+  const primary = navItems.filter((n) => (MOBILE_PRIMARY as readonly string[]).includes(n.id) && !(hideAsk && n.id === "agent"));
+  const rest = navItems.filter((n) => !(MOBILE_PRIMARY as readonly string[]).includes(n.id) && !(hideAsk && n.id === "agent"));
   const moreActive = rest.some((n) => n.id === screen);
   const go = (s: Screen) => { setOpen(false); navigate(s); };
 

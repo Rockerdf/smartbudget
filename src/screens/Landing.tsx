@@ -39,8 +39,8 @@ export default function Landing({ navigate }: { navigate: (s: Screen) => void })
       a: "A 0–100 score calculated from your budget adherence, savings rate, expense patterns, and goal progress. It is an educational metric — not an official credit or financial rating.",
     },
     {
-      q: "How does the AI Assistant work?",
-      a: "The AI assistant uses rule-based educational responses to answer budgeting and finance questions. It does not access real financial data or provide personalised financial advice.",
+      q: "How does the AI agent work?",
+      a: "Ask in plain English or send a photo of a receipt, a bank statement, a spreadsheet or a video. The agent (powered by Google Gemini) answers questions and records transactions, budgets and goals in your own account, and asks before deleting anything. It never moves real money and gives educational information, not financial advice.",
     },
   ];
 
@@ -104,8 +104,8 @@ export default function Landing({ navigate }: { navigate: (s: Screen) => void })
       ),
     },
     {
-      title: "AI Assistant",
-      desc: "Ask budgeting questions, get educational explanations, and learn financial concepts at your own pace with guided coaching.",
+      title: "AI Agent",
+      desc: "Snap a receipt and it's recorded. Ask questions, import statements, set budgets and goals: tell the agent what you need and it does the work.",
       color: "#4F46E5",
       bg: "#EEF2FF",
       icon: (

@@ -34,6 +34,7 @@ export default function AdminDashboard({ navigate, role }: { navigate: (s: Scree
   };
 
   const quickActions: { label: string; desc: string; screen?: AdminScreen; onClick?: () => void; icon: string }[] = ([
+    { label: "Ask the AI agent", desc: "Questions and tasks in plain English", screen: "adminAgent", icon: "✨" },
     { label: "Manage users", desc: "Search, suspend, reset passwords", screen: "adminUsers", icon: "👥" },
     { label: "Reports", desc: "Usage, finance and learning trends", screen: "adminReports", icon: "📊" },
     { label: "Security Center", desc: "Sign-ins and alerts", screen: "adminSecurity", icon: "🔒" },

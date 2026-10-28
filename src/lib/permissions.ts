@@ -6,6 +6,7 @@ import type { Screen } from "../App";
 
 export type AdminScreen = Extract<Screen,
   | "adminDashboard"
+  | "adminAgent"
   | "adminUsers"
   | "adminRoles"
   | "adminReports"
@@ -21,6 +22,7 @@ export const ADMIN_PANEL_ROLES: UserRole[] = ["superadmin", "admin", "support"];
 // Full ordered list of admin-panel screens
 export const ALL_ADMIN_SCREENS: AdminScreen[] = [
   "adminDashboard",
+  "adminAgent",
   "adminUsers",
   "adminRoles",
   "adminReports",
@@ -33,6 +35,7 @@ export const ALL_ADMIN_SCREENS: AdminScreen[] = [
 // Screen → minimum roles that may access it
 export const SCREEN_PERMISSIONS: Record<AdminScreen, UserRole[]> = {
   adminDashboard:     ["superadmin", "admin", "support"],
+  adminAgent:         ["superadmin", "admin", "support"],
   adminUsers:         ["superadmin", "admin", "support"],
   adminRoles:         ["superadmin"],
   adminReports:       ["superadmin", "admin", "support"],

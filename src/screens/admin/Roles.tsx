@@ -16,7 +16,7 @@ const ROLE_DESC: Record<UserRole, string> = {
 };
 
 const SCREEN_LABEL: Record<AdminScreen, string> = {
-  adminDashboard: "Admin dashboard", adminUsers: "View users", adminRoles: "Roles & permissions",
+  adminDashboard: "Admin dashboard", adminAgent: "AI agent (staff tools)", adminUsers: "View users", adminRoles: "Roles & permissions",
   adminReports: "Reports", adminContent: "Content (hide/feature)", adminSecurity: "Security Center",
   adminAuditLogs: "Activity log", adminSystemSettings: "Site settings",
 };

@@ -8,6 +8,25 @@ import {
   asTransactionType,
 } from "../lib/transactions";
 import type { Transaction as StoredTransaction } from "../lib/transactions";
+import { fileUrl } from "../lib/agent";
+
+/** Link to a receipt the AI agent saved with this transaction (private, short-lived link). */
+function ReceiptLink({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void fileUrl(path).then((u) => { if (live) setUrl(u); });
+    return () => { live = false; };
+  }, [path]);
+  return (
+    <a href={url ?? undefined} target="_blank" rel="noopener noreferrer" title="View receipt" aria-label="View receipt"
+      aria-disabled={!url} onClick={(e) => { if (!url) e.preventDefault(); }}
+      className={`inline-flex items-center gap-0.5 text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] px-1.5 py-0.5 rounded-md hover:bg-[#DBEAFE] shrink-0 ${url ? "" : "opacity-50"}`}>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+      Receipt
+    </a>
+  );
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -626,6 +645,7 @@ export default function Transactions({
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm font-semibold text-[#0F172A] truncate">{tx.description}</p>
                               {tx.recurring && <RecurringIcon />}
+                              {tx.receiptPath && <ReceiptLink path={tx.receiptPath} />}
                             </div>
                             {tx.note && <p className="text-[11px] text-[#94A3B8] truncate mt-0.5">{tx.note}</p>}
                           </td>
@@ -690,6 +710,7 @@ export default function Transactions({
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm font-semibold text-[#0F172A] truncate">{tx.description}</p>
                               {tx.recurring && <RecurringIcon />}
+                              {tx.receiptPath && <ReceiptLink path={tx.receiptPath} />}
                             </div>
                             {tx.note && <p className="text-[11px] text-[#94A3B8] mt-0.5">{tx.note}</p>}
                           </div>

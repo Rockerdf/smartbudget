@@ -39,9 +39,20 @@ Open http://localhost:5173.
 
 If the two `VITE_` values are missing, the app shows a "not configured yet" page instead of a blank screen.
 
+## AI agent (Google Gemini)
+
+The AI Agent page needs three things. Until they're done, the page explains what is missing; the rest of the app works without it.
+
+1. **Database:** run `supabase/agent_upgrade.sql` in the SQL Editor (new projects: already in `schema.sql`).
+2. **Gemini key:** create a free key at https://aistudio.google.com/apikey. In Supabase go to **Edge Functions › Secrets** and add `GEMINI_API_KEY` with that key. Optional: `GEMINI_MODEL` (default `gemini-flash-latest`).
+3. **Deploy the function:** **Edge Functions › Deploy a new function › Via Editor**, name it exactly `agent`, replace the sample code with the whole of `supabase/functions/agent/index.ts`, and deploy. Then open the function's **Settings** and turn **Verify JWT** (Enforce JWT verification) **off**; the function checks the sign-in itself.
+   (With the Supabase CLI instead: `supabase functions deploy agent --no-verify-jwt`.)
+
+Never put the Gemini key in `.env` or in the website code. On Google's free tier, Google may use prompts and files to improve its products (this is stated in the Privacy Policy); use a paid key for real users' data.
+
 ## Upgrading an existing database
 
-If your Supabase project was set up before the admin panel upgrade (28 October 2026), open **SQL Editor → New query**, paste the whole of `supabase/admin_upgrade.sql` and click **Run**. It is safe to run more than once. (`supabase/schema.sql` already includes it, so a new project only needs `schema.sql`.)
+If your Supabase project was set up before 28 October 2026, open **SQL Editor → New query** and run, in this order, `supabase/admin_upgrade.sql` and then `supabase/agent_upgrade.sql`. Both are safe to run more than once. (`supabase/schema.sql` already includes both, so a new project only needs `schema.sql`.)
 
 ## Admin panel
 
@@ -50,13 +61,14 @@ Sign in with a `support`, `admin` or `superadmin` account to reach it. Everythin
 | Page | What it shows / does | Who |
 |---|---|---|
 | Dashboard | Users, activity, sign-ins, feature adoption, recent activity, quick actions, user export | all staff |
+| AI Agent | Ask about the platform or give tasks; changes wait for Approve | all staff (tools by role) |
 | Users | Search, suspend/reactivate, reset passwords, change roles | all staff (actions by role) |
 | Roles & Permissions | The real permission rules and who has each role | superadmin |
 | Reports | Monthly user, financial (anonymised), category, education and security reports; CSV/PDF | all staff |
 | Content | Hide or feature lessons, videos and books; lesson completion stats | superadmin |
 | Security Center | Failed/successful sign-ins with IP and device, automatic alerts | admin, superadmin |
 | Activity Log | Every staff action and sign-in event; search, filter, export | admin, superadmin |
-| Site Settings | Maintenance mode, sign-ups on/off, AI assistant on/off, announcement banner | superadmin |
+| Site Settings | Maintenance mode, sign-ups on/off, AI agent on/off and usage limits, announcement banner | superadmin |
 
 Staff never see individual people's transactions, budgets or goals, only totals.
 
@@ -105,6 +117,8 @@ git push -u origin main
 | Page routing and URLs | `src/App.tsx` |
 | Header/footer for public pages | `src/components/SiteChrome.tsx` |
 | Database schema and security rules | `supabase/schema.sql` |
+| AI agent server code (tools, Gemini) | `supabase/functions/agent/index.ts` |
+| AI agent page | `src/screens/Agent.tsx`, `src/lib/agent.ts` |
 
 ## Scripts
 
@@ -120,7 +134,7 @@ git push -u origin main
 
 - Bank connection is a clearly labelled simulation ("Harbour Demo Bank").
 - Two-factor authentication and changing your email address are not implemented.
-- Admin screens other than Users and the Dashboard counts show sample data (labelled in the UI).
+- The AI agent can misread receipts; it shows exactly what it recorded so people can check.
 - The contact form opens the visitor's email app (there is no server-side mail sending).
 
 See `CHANGES.md` for the full list of fixes in this version.

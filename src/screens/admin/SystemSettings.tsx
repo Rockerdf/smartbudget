@@ -107,8 +107,20 @@ export default function AdminSystemSettings() {
           </Card>
 
           <Card title="Features">
-            <Row title="AI assistant" desc="Shows the Ask AI page and the chat button for users. Turn off to hide both.">
-              <Toggle on={draft.assistant_enabled} onChange={(v) => set("assistant_enabled", v)} label="AI assistant" />
+            <Row title="AI agent for users" desc="Shows the AI Agent page to users. Turn off to hide it (staff keep their agent). Needs the agent Edge Function and a Gemini key, see the README.">
+              <Toggle on={draft.assistant_enabled} onChange={(v) => set("assistant_enabled", v)} label="AI agent" />
+            </Row>
+            <Row title="AI messages per person" desc="Keeps the free Gemini quota fair. Staff get three times these limits. Users who hit a limit are told when they can try again.">
+              <div className="flex gap-3">
+                {([["agent_hourly_limit", "Per hour"], ["agent_daily_limit", "Per day"]] as const).map(([k, label]) => (
+                  <label key={k} className="text-xs font-semibold text-[#475569]">
+                    {label}
+                    <input type="number" min={1} max={5000} step={1} value={draft[k]}
+                      onChange={(e) => set(k, Math.max(1, Math.min(5000, Math.round(Number(e.target.value) || 1))))}
+                      className="mt-1 block w-24 border border-[#E2E8F0] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#2563EB]" />
+                  </label>
+                ))}
+              </div>
             </Row>
           </Card>
 

@@ -6,6 +6,7 @@ import { fetchGoals } from "../lib/goals";
 import { loadNotificationPrefs, saveNotificationPrefs } from "../lib/notifications";
 import type { NotificationPrefs } from "../lib/notifications";
 import { downloadCsv, printReport, todayStamp } from "../lib/exportData";
+import { deleteAllMyAgentFiles, exportMyChats } from "../lib/agent";
 import type { Screen, ConnectedAccount } from "../App";
 import type { UserSession } from "../lib/auth";
 import { changePassword, deleteOwnAccount, signOutOtherDevices, updateOwnName, MIN_PASSWORD_LENGTH } from "../lib/auth";
@@ -90,7 +91,7 @@ export default function Settings({ navigate, onLogout, connectedAccounts = [], o
   const handleExportCsv = async () => {
     setExporting("csv");
     try {
-      const { transactions, budget, goals } = await loadAll();
+      const [{ transactions, budget, goals }, chats] = await Promise.all([loadAll(), exportMyChats()]);
       const rows: (string | number)[][] = [
         ["SmartBudget data export", `Exported ${new Date().toLocaleString("en-AU")}`],
         [],
@@ -105,6 +106,10 @@ export default function Settings({ navigate, onLogout, connectedAccounts = [], o
         ["SAVINGS GOALS"],
         ["Goal", "Target (AUD)", "Saved (AUD)", "Monthly contribution (AUD)", "Target date"],
         ...goals.map((g) => [g.name, g.target.toFixed(2), g.current.toFixed(2), g.monthlyContribution.toFixed(2), g.deadline]),
+        [],
+        ["AI AGENT CHATS"],
+        ["Chat", "Time", "From", "Message", "Files"],
+        ...chats.map((c) => [c.conversation, c.date, c.role === "user" ? "You" : "AI agent", c.message, c.files]),
       ];
       downloadCsv(`smartbudget-data-${todayStamp()}.csv`, rows);
       showToast(`✓  Downloaded ${transactions.length} transactions, ${budget.length} budgets and ${goals.length} goals`);
@@ -209,6 +214,7 @@ export default function Settings({ navigate, onLogout, connectedAccounts = [], o
   const handleDeleteAccount = async () => {
     setBusy(true);
     try {
+      await deleteAllMyAgentFiles();
       await deleteOwnAccount();
       onLogout();
     } catch (err) {

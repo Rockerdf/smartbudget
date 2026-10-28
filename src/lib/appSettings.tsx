@@ -12,6 +12,8 @@ export type AppSettings = {
   assistant_enabled: boolean;
   announcement_enabled: boolean;
   announcement: string;
+  agent_hourly_limit: number;
+  agent_daily_limit: number;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -21,6 +23,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   assistant_enabled: true,
   announcement_enabled: false,
   announcement: "",
+  agent_hourly_limit: 30,
+  agent_daily_limit: 150,
 };
 
 export async function fetchAppSettings(): Promise<AppSettings> {

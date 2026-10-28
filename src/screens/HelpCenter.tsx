@@ -93,10 +93,10 @@ const quickLinks = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
       </svg>
     ),
-    title: "AI Assistant",
-    screen: "ask" as Screen,
+    title: "AI Agent",
+    screen: "agent" as Screen,
     keyword: "AI",
-    desc: "Learn what the AI coach can help you understand about your finances",
+    desc: "Ask anything, snap receipts, import statements and let the agent do the work",
     color: "text-indigo-600",
     bg: "bg-indigo-50",
   },
@@ -124,9 +124,9 @@ const faqs = [
       "Open Savings from the menu and click 'New Goal'. Enter a goal name (e.g. Emergency Fund), the target amount, how much you've saved so far, a monthly contribution and a target date. SmartBudget estimates when you'll reach it. Use 'Add +' on a goal card to record new savings.",
   },
   {
-    question: "What does the AI assistant do?",
+    question: "What can the AI agent do?",
     answer:
-      "The assistant (Ask AI, or the chat button in the corner) answers budgeting questions with rule-based, educational explanations — for example how the 50/30/20 rule works or how to build an emergency fund. It does not move money, see your bank, or give personal financial advice.",
+      "Open AI Agent from the menu (just below Dashboard) and ask in plain English. It can answer money questions, add, change or delete transactions, read receipts and invoices from a photo or PDF (and keep the receipt with the transaction), import bank statements and spreadsheets, set budgets and manage savings goals. Anything that deletes data waits for you to press Approve. It only sees your own records, cannot move money or reach your bank, and its answers are educational, not personal financial advice. Messages and files are processed by Google Gemini.",
   },
   {
     question: "How do I change my password?",

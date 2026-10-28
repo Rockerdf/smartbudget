@@ -15,6 +15,8 @@ export type Transaction = {
   type: TransactionType;
   recurring: boolean;
   note?: string;
+  /** Path of a receipt file kept in private storage (added by the AI agent). */
+  receiptPath?: string;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,8 +35,15 @@ function notifyTransactionsChanged() {
   transactionsChangedListeners.forEach((listener) => listener());
 }
 
+/** Lets other parts of the app (e.g. the AI agent) say that transactions changed. */
+export function markTransactionsChanged() {
+  notifyTransactionsChanged();
+}
+
 const TRANSACTION_COLUMNS =
   "id, user_id, category_id, date, description, amount, type, recurring, note, categories(name)";
+// receipt_path arrives with supabase/agent_upgrade.sql; older databases simply don't have it.
+const LIST_COLUMNS = TRANSACTION_COLUMNS + ", receipt_path";
 
 type TransactionRow = {
   id: string;
@@ -46,6 +55,7 @@ type TransactionRow = {
   type: string;
   recurring: boolean;
   note: string | null;
+  receipt_path?: string | null;
   categories?: { name: string } | { name: string }[] | null;
 };
 
@@ -99,6 +109,7 @@ function toTransaction(row: TransactionRow, category = categoryName(row)): Trans
     type,
     recurring: row.recurring === true,
     note: row.note ?? undefined,
+    receiptPath: row.receipt_path ?? undefined,
   };
 }
 
@@ -119,14 +130,13 @@ async function toDbPayload(userId: string, tx: Omit<Transaction, "id"> & { id?: 
 
 export async function fetchTransactions(): Promise<Transaction[]> {
   const userId = await requireAuthUserId();
-  const { data, error } = await supabase
-    .from("transactions")
-    .select(TRANSACTION_COLUMNS)
-    .eq("user_id", userId)
-    .order("date", { ascending: false });
+  const query = (columns: string) =>
+    supabase.from("transactions").select(columns).eq("user_id", userId).order("date", { ascending: false });
+  let { data, error } = await query(LIST_COLUMNS);
+  if (error && /receipt_path/.test(error.message)) ({ data, error } = await query(TRANSACTION_COLUMNS));
 
   if (error) throw friendlyError(error);
-  return (data as TransactionRow[] | null)?.map((row) => toTransaction(row as TransactionRow)) ?? [];
+  return (data as unknown as TransactionRow[] | null)?.map((row) => toTransaction(row)) ?? [];
 }
 
 export async function insertTransaction(

@@ -1,5 +1,17 @@
 # Changes
 
+## AI agent replaces the chatbot (28 October 2026)
+
+- **New AI Agent page** (just below Dashboard, for users and in the admin panel), ChatGPT-style: chat history with rename/delete, suggestions, drag-and-drop, paste, phone camera, Markdown replies, copy button, and "Open page" buttons.
+- **It does the work, not just talk:** add, change and delete transactions; read receipts and invoices from photos or PDFs (and keep the receipt with the transaction, viewable from Transactions); import bank statements and spreadsheets (CSV, Excel, PDF); set budgets; create and update savings goals; summarise spending. It skips likely duplicates and asks first.
+- **Files:** images, PDFs, CSV/text, Excel, Word, video and audio, up to 6 per message and 50 MB each, stored in a private per-person folder.
+- **Staff tools (by role):** platform overview, reports, lesson stats, user search, security overview and activity log, suspend/reactivate (admin+), change roles and site settings (superadmin), send password resets. Staff never see individual people's finances.
+- **Safety:** runs as the signed-in person, so database security rules apply to everything it does. Deleting data, suspensions, role and settings changes wait for an Approve button. Per-person hourly and daily limits (adjustable in Site Settings; staff get 3x). The Gemini key lives only on the server.
+- **Removed** the old rule-based chatbot (Ask AI page, floating chat button and the admin Users assistant).
+- **Database (`supabase/agent_upgrade.sql`, also appended to `schema.sql`):** chat tables, usage limits, `receipt_path` on transactions, private `agent-files` storage bucket and policies. Tests: `supabase/tests/03_agent_tests.sql`.
+- **Server (`supabase/functions/agent/index.ts`):** Supabase Edge Function that calls Google Gemini with function calling.
+- Privacy Policy, Disclaimer, Help Center and landing page updated (Gemini processing, free-tier data use, chat deletion and export). "Export my data" now includes AI chats; deleting your account also removes uploaded files.
+
 ## Admin panel made fully real (28 October 2026)
 
 - **Database (`supabase/admin_upgrade.sql`, also appended to `schema.sql`):** new tables for the activity log, sign-in events (with IP address and browser), lesson progress, content visibility and site settings; staff-only functions for dashboard stats, reports, security overview and the activity log. Role changes, suspensions, account deletions, settings and content changes are logged automatically by the database. Failed sign-in logging is rate limited. Security records are deleted after 12 months. 35 new permission tests (`supabase/tests/02_admin_tests.sql`).

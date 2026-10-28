@@ -4,6 +4,7 @@ import { ROLE_META, ADMIN_PANEL_ROLES } from "../lib/permissions";
 
 const SCREEN_LABELS: Partial<Record<Screen, string>> = {
   adminDashboard:      "Admin Dashboard",
+  adminAgent:          "AI Agent",
   adminUsers:          "User Management",
   adminRoles:          "Roles & Permissions",
   adminReports:        "Reports",

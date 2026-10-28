@@ -242,3 +242,12 @@ body {
 
 /* ─── Selection ──────────────────────────────────────────────────────────── */
 ::selection { background: rgba(37, 99, 235, 0.15); color: #0F172A; }
+
+/* The AI agent's message box shows focus on its whole card instead of the text area. */
+.agent-input:focus-visible { outline: none; }
+
+[data-theme="dark"] .text-\[\#166534\]        { color: #6EE7B7 !important; }
+[data-theme="dark"] .text-\[\#991B1B\],
+[data-theme="dark"] .text-\[\#B91C1C\]        { color: #FCA5A5 !important; }
+[data-theme="dark"] .border-\[\#FCD34D\]      { border-color: rgba(245,158,11,0.4) !important; }
+[data-theme="dark"] .hover\:bg-\[\#F8FBFF\]:hover { background-color: #1E2530 !important; }

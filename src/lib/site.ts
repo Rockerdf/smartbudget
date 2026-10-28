@@ -13,7 +13,7 @@ export const SITE = {
   country: "Australia",
   supportHours: "Monday to Friday, 9 am – 5 pm AEST (Sydney time)",
   /** Date shown as "Last updated" on the legal pages. */
-  legalUpdated: "27 October 2026",
+  legalUpdated: "28 October 2026",
   year: 2026,
 } as const;
 

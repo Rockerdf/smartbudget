@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useUsers } from "../../contexts/UsersContext";
 import type { UserRecord, UserRole, UserStatus } from "../../lib/auth";
-import AIAssistant from "../../components/AIAssistant";
 import { canDoUserAction, assignableRoles, ROLE_META } from "../../lib/permissions";
 
 // ── Palette maps ──────────────────────────────────────────────────────────────
@@ -629,17 +628,6 @@ export default function AdminUsers({ currentUserRole, currentUserEmail }: { curr
         Financial transactions, balances, and personal data are never displayed here — data minimisation principle.
       </p>
 
-      <AIAssistant
-        context="admin-users"
-        assistantName="User Management Assistant"
-        accentColor="#6D28D9"
-        admin
-        contextData={{
-          totalUsers: users.length,
-          activeUsers: users.filter((u) => u.status !== "suspended").length,
-          suspendedUsers: users.filter((u) => u.status === "suspended").length,
-        }}
-      />
     </div>
   );
 }

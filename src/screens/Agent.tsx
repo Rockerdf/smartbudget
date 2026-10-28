@@ -5,7 +5,7 @@ import type { UserRole } from "../lib/auth";
 import Markdown from "../components/Markdown";
 import {
   ACCEPT, MAX_FILES, decideAction, deleteConversation, fileProblem, fileUrl, listConversations, loadMessages,
-  removeUpload, renameConversation, sendToAgent, uploadFile,
+  removeUpload, renameConversation, sendToAgent, uploadFile, StoppedError,
 } from "../lib/agent";
 import type { AgentAction, AgentFile, AgentMessage, Conversation } from "../lib/agent";
 
@@ -354,11 +354,24 @@ export default function Agent({ navigate, userName, role }: Props) {
   const ready = drafts.filter((d) => d.status === "ready");
   const canSend = !pending && !uploading && (text.trim().length > 0 || ready.length > 0);
 
+  const stopRef = useRef<AbortController | null>(null);
+
+  const stop = () => stopRef.current?.abort();
+
   const run = async (p: Pending) => {
     setPending(p);
     setError(null);
+    // New chats get their id here, so a stopped chat can still be reopened later.
+    const conversationId = activeId ?? crypto.randomUUID();
+    if (!activeId) {
+      setActiveId(conversationId);
+      const t = (p.text || p.files[0]?.file.name || "New chat").replace(/\s+/g, " ").slice(0, 60);
+      setConvs((cs) => [{ id: conversationId, title: t, updated_at: new Date().toISOString() }, ...cs]);
+    }
+    const ctrl = new AbortController();
+    stopRef.current = ctrl;
     try {
-      const res = await sendToAgent({ conversationId: activeId, message: p.text, attachments: p.files.map((d) => d.uploaded!) });
+      const res = await sendToAgent({ conversationId, message: p.text, attachments: p.files.map((d) => d.uploaded!), signal: ctrl.signal });
       setActiveId(res.conversation.id);
       setMessages((ms) => [...ms, ...res.messages]);
       setConvs((cs) => [
@@ -366,8 +379,19 @@ export default function Agent({ navigate, userName, role }: Props) {
         ...cs.filter((c) => c.id !== res.conversation.id),
       ]);
     } catch (e) {
-      setError({ msg: e instanceof Error ? e.message : "The AI agent couldn't answer.", retry: p });
+      if (e instanceof StoppedError) {
+        const now = new Date().toISOString();
+        setMessages((ms) => [
+          ...ms,
+          { id: `local-u-${now}`, role: "user", content: p.text, attachments: p.files.map((d) => d.uploaded!), actions: [], created_at: now },
+          { id: `local-a-${now}`, role: "assistant", content: "*You stopped this reply.* Anything the agent had already finished is kept. Send a new message whenever you're ready.", attachments: [], actions: [], created_at: now },
+        ]);
+        setTimeout(() => { void refreshConvs(); }, 2500);
+      } else {
+        setError({ msg: e instanceof Error ? e.message : "The AI agent couldn't answer.", retry: p });
+      }
     } finally {
+      if (stopRef.current === ctrl) stopRef.current = null;
       setPending(null);
     }
   };
@@ -381,6 +405,13 @@ export default function Agent({ navigate, userName, role }: Props) {
     setDrafts((ds) => ds.filter((d) => d.status === "error"));
     void run(p);
   };
+
+  useEffect(() => {
+    if (!pending) return;
+    const onEsc = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") stop(); };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [pending]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const touch = window.matchMedia?.("(pointer: coarse)").matches;
@@ -590,11 +621,18 @@ export default function Agent({ navigate, userName, role }: Props) {
                   className="p-2 rounded-lg text-[#64748B] hover:text-[#2563EB] hover:bg-[#EFF6FF]">{Ico.clip}</button>
                 <button type="button" onClick={() => cameraInput.current?.click()} aria-label="Take a photo" title="Take a photo"
                   className="p-2 rounded-lg text-[#64748B] hover:text-[#2563EB] hover:bg-[#EFF6FF] sm:hidden">{Ico.camera}</button>
-                <span className="text-[11px] text-[#94A3B8] ml-1 hidden sm:inline">{uploading ? "Uploading files…" : "Enter to send · Shift+Enter for a new line"}</span>
-                <button type="button" onClick={() => send()} disabled={!canSend} aria-label="Send"
-                  className="ml-auto w-9 h-9 rounded-xl bg-[#2563EB] text-white flex items-center justify-center hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] transition-colors">
-                  {Ico.send}
-                </button>
+                <span className="text-[11px] text-[#94A3B8] ml-1 hidden sm:inline">{uploading ? "Uploading files…" : pending ? "Working… press Stop or Esc to cancel" : "Enter to send · Shift+Enter for a new line"}</span>
+                {pending ? (
+                  <button type="button" onClick={stop} aria-label="Stop" title="Stop (Esc)"
+                    className="ml-auto w-9 h-9 rounded-xl bg-[#0F172A] text-white flex items-center justify-center hover:bg-[#334155] transition-colors">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><rect width="12" height="12" rx="2" /></svg>
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => send()} disabled={!canSend} aria-label="Send"
+                    className="ml-auto w-9 h-9 rounded-xl bg-[#2563EB] text-white flex items-center justify-center hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] transition-colors">
+                    {Ico.send}
+                  </button>
+                )}
               </div>
               <input ref={fileInput} type="file" multiple accept={ACCEPT} className="hidden" onChange={onPick} />
               <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPick} />

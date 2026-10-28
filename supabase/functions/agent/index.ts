@@ -122,18 +122,67 @@ async function categoryList(ctx: Ctx) {
   return ctx.cats;
 }
 
+// Category names are matched loosely: any capitalisation, "and" or "&", plurals,
+// and everyday words ("groceries", "uber", "salary") map to the built-in categories.
+const normCat = (x: string) => x.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+const CATEGORY_WORDS: Record<string, string> = {
+  food: "Food & Dining", groceries: "Food & Dining", grocery: "Food & Dining", supermarket: "Food & Dining", restaurant: "Food & Dining",
+  dining: "Food & Dining", "eating out": "Food & Dining", takeaway: "Food & Dining", coffee: "Food & Dining", cafe: "Food & Dining", lunch: "Food & Dining", dinner: "Food & Dining",
+  rent: "Housing", mortgage: "Housing", home: "Housing", house: "Housing",
+  transportation: "Transport", uber: "Transport", taxi: "Transport", fuel: "Transport", petrol: "Transport", gas: "Transport", car: "Transport", parking: "Transport", bus: "Transport", train: "Transport", opal: "Transport", myki: "Transport",
+  movies: "Entertainment", movie: "Entertainment", games: "Entertainment", fun: "Entertainment", concert: "Entertainment",
+  health: "Healthcare", medical: "Healthcare", doctor: "Healthcare", pharmacy: "Healthcare", chemist: "Healthcare", dentist: "Healthcare",
+  clothes: "Shopping", clothing: "Shopping", shoes: "Shopping",
+  school: "Education", uni: "Education", university: "Education", tuition: "Education", course: "Education", books: "Education",
+  bills: "Utilities", electricity: "Utilities", power: "Utilities", water: "Utilities", internet: "Utilities", phone: "Utilities", mobile: "Utilities",
+  saving: "Savings", holiday: "Travel", holidays: "Travel", flights: "Travel", flight: "Travel", hotel: "Travel", trip: "Travel",
+  subscription: "Subscriptions", netflix: "Subscriptions", spotify: "Subscriptions", streaming: "Subscriptions",
+  haircut: "Personal Care", beauty: "Personal Care", gym: "Personal Care",
+  misc: "Other", miscellaneous: "Other", general: "Other",
+  salary: "Income", wage: "Income", wages: "Income", pay: "Income", paycheck: "Income", payslip: "Income", bonus: "Income", refund: "Income",
+};
+
+function findCategory(rows: { id: string; user_id: string | null; name: string; type: string }[], name: string) {
+  const want = normCat(name);
+  if (!want) return undefined;
+  const byNorm = (n: string) => rows.find((c) => c.user_id && normCat(c.name) === n) ?? rows.find((c) => normCat(c.name) === n);
+  const singular = want.replace(/ies$/, "y").replace(/s$/, "");
+  const alias = CATEGORY_WORDS[want] ?? CATEGORY_WORDS[singular];
+  const hit = byNorm(want) ?? byNorm(singular) ?? (alias ? byNorm(normCat(alias)) : undefined);
+  if (hit) return hit;
+  if (want.length >= 4) {
+    const partial = rows.filter((c) => normCat(c.name).startsWith(want) || want.startsWith(normCat(c.name)));
+    if (partial.length === 1) return partial[0];
+  }
+  return undefined;
+}
+
 async function categoryId(ctx: Ctx, name: string, type: "income" | "expense"): Promise<string | null> {
   const wanted = clean(name, 60) || (type === "income" ? "Income" : "Other");
   const rows = await categoryList(ctx);
-  const lower = wanted.toLowerCase();
-  const hit = rows.find((c) => c.user_id && c.name.toLowerCase() === lower) ?? rows.find((c) => c.name.toLowerCase() === lower);
+  const hit = findCategory(rows, wanted);
   if (hit) return hit.id;
+  // A genuinely new category: tidy the capitalisation ("pet care" -> "Pet Care").
+  const nice = wanted.replace(/\s+/g, " ").replace(/\b([a-z])/g, (m) => m.toUpperCase());
   const { data, error } = await ctx.db.from("categories")
-    .insert({ user_id: ctx.userId, name: wanted, type, is_system: false })
+    .insert({ user_id: ctx.userId, name: nice, type, is_system: false })
     .select("id, user_id, name, type").single();
   if (error) dbError(error);
   ctx.cats!.push(data);
   return data.id;
+}
+
+/** Lower-cases the fixed-choice arguments the AI sends ("Income" -> "income"). */
+function normalizeArgs(args: any): any {
+  if (Array.isArray(args)) return args.map(normalizeArgs);
+  if (!args || typeof args !== "object") return args;
+  const out: any = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (["type", "status", "role", "kind"].includes(k) && typeof v === "string") out[k] = v.trim().toLowerCase();
+    else if (k === "email" && typeof v === "string") out[k] = v.trim().toLowerCase();
+    else out[k] = normalizeArgs(v);
+  }
+  return out;
 }
 
 const catName = (row: any) => (Array.isArray(row?.categories) ? row.categories[0]?.name : row?.categories?.name) ?? "Other";
@@ -255,8 +304,9 @@ const TOOLS: Tool[] = [
       if (Number.isFinite(Number(a.min_amount)) && a.min_amount !== undefined) q = q.gte("amount", Number(a.min_amount));
       if (Number.isFinite(Number(a.max_amount)) && a.max_amount !== undefined) q = q.lte("amount", Number(a.max_amount));
       if (a.category) {
-        const want = clean(a.category, 60).toLowerCase();
-        const ids = (await categoryList(ctx)).filter((c) => c.name.toLowerCase() === want).map((c) => c.id);
+        const rows = await categoryList(ctx);
+        const match = findCategory(rows, clean(a.category, 60));
+        const ids = match ? rows.filter((c) => normCat(c.name) === normCat(match.name)).map((c) => c.id) : [];
         if (!ids.length) return { label: "Searched your transactions", result: { count: 0, transactions: [], note: `No category called ${a.category}.` } };
         q = q.in("category_id", ids);
       }
@@ -430,8 +480,10 @@ const TOOLS: Tool[] = [
     parameters: OBJ({ category: S("Category"), month: S("YYYY-MM, defaults to this month") }, ["category"]),
     async preview(ctx, a) {
       const { month, start } = monthRange(a.month, ctx.today);
-      const want = clean(a.category, 60).toLowerCase();
-      const ids = (await categoryList(ctx)).filter((c) => c.name.toLowerCase() === want).map((c) => c.id);
+      const rows = await categoryList(ctx);
+      const match = findCategory(rows, clean(a.category, 60));
+      const ids = match ? rows.filter((c) => normCat(c.name) === normCat(match.name)).map((c) => c.id) : [];
+      if (match) a.category = match.name;
       const { data, error } = ids.length
         ? await ctx.db.from("budgets").select("id, amount_budgeted").eq("period_start", start).in("category_id", ids)
         : { data: [], error: null };
@@ -704,7 +756,9 @@ const TOOLS: Tool[] = [
     parameters: OBJ({ page: S("Page id", { enum: [...USER_PAGES, ...STAFF_PAGES] }) }, ["page"]),
     async run(ctx, a) {
       const allowed = STAFF.includes(ctx.role) ? STAFF_PAGES : USER_PAGES;
-      if (!allowed.includes(a.page)) throw new UserError("That page isn't available for this account.");
+      const page = allowed.find((p) => p.toLowerCase() === String(a.page ?? "").toLowerCase().replace(/[\s_-]/g, ""));
+      if (!page) throw new UserError("That page isn't available for this account.");
+      a.page = page;
       return { label: "Open page", page: a.page, result: { ok: true, note: "A button to open the page is shown." } };
     },
   },
@@ -797,12 +851,20 @@ async function fileParts(ctx: Ctx, key: string, f: FileRef, budget: { inline: nu
 // ─────────────────────────────────────────────────────────────────────────────
 // Gemini
 // ─────────────────────────────────────────────────────────────────────────────
-// Models that are temporarily overloaded are skipped for the rest of this request.
-const busyModels = new Set<string>();
+// Models that were overloaded or slow are skipped for a few minutes, so later
+// messages don't wait on them again. (Lives as long as this function instance.)
+const busyUntil = new Map<string, number>();
+const BUSY_FOR_MS = 3 * 60_000;
+const busyModels = {
+  has: (m: string) => (busyUntil.get(m) ?? 0) > Date.now(),
+  add: (m: string) => { busyUntil.set(m, Date.now() + BUSY_FOR_MS); },
+};
 
-async function callGemini(key: string, body: any, deadline: number): Promise<any> {
+async function callGemini(key: string, body: any, deadline: number, stop?: AbortSignal): Promise<any> {
   // Try the chosen model first; if it is busy, slow, missing or failing, move straight on to the next one.
-  const models = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)].filter((m) => !busyModels.has(m));
+  const all = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)];
+  const fresh = all.filter((m) => !busyModels.has(m));
+  const models = fresh.length ? fresh : all; // if everything was busy recently, try them all again
   let lastStatus = 0;
   let lastMsg = "";
   for (const model of models) {
@@ -810,6 +872,8 @@ async function callGemini(key: string, body: any, deadline: number): Promise<any
     if (left < 4000) break;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), Math.min(CALL_TIMEOUT_MS, left - 2000));
+    const onStop = () => ctrl.abort();
+    stop?.addEventListener("abort", onStop);
     // Gemini 2.5 models answer much faster with little or no "thinking".
     const payload = /2\.5/.test(model) ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: { thinkingBudget: 0 } } } : body;
     let res: Response;
@@ -822,6 +886,8 @@ async function callGemini(key: string, body: any, deadline: number): Promise<any
       });
     } catch (e) {
       clearTimeout(timer);
+      stop?.removeEventListener("abort", onStop);
+      if (stop?.aborted) throw new UserError("Stopped.");
       lastStatus = 0;
       lastMsg = ctrl.signal.aborted ? "took too long" : String(e).slice(0, 120);
       console.error("gemini", model, "no answer:", lastMsg);
@@ -829,7 +895,8 @@ async function callGemini(key: string, body: any, deadline: number): Promise<any
       continue;
     }
     clearTimeout(timer);
-    if (res.ok) return await res.json();
+    stop?.removeEventListener("abort", onStop);
+    if (res.ok) { busyUntil.delete(model); return await res.json(); }
     const text = await res.text();
     let msg = text;
     try { msg = JSON.parse(text)?.error?.message ?? text; } catch { /* not JSON */ }
@@ -853,6 +920,7 @@ Today is ${ctx.today}. You are talking to ${ctx.name || "the user"} (${ctx.email
 
 How you work:
 - You can take real actions with your tools. When the person asks you to do something your tools can do, do it instead of explaining how. Chain several tools if needed.
+- For greetings, small talk and general knowledge questions, just answer straight away without calling any tools.
 - Never invent data, ids or results. Look things up with tools, and only say something was done if a tool reported it.
 - Tools marked as needing approval do not run until the person presses Approve on the card shown under your reply. Say clearly that it is waiting for their approval; never say it is done.
 - If something important is unclear (for example an amount you can't read on a receipt), ask one short question instead of guessing.
@@ -860,6 +928,8 @@ How you work:
 - You can't browse the web, send emails (except password resets for staff), or reach other apps. Say so honestly if asked.
 ${staff ? `- This is a staff account. You can report on the platform and run the admin tasks your tools allow for the "${ctx.role}" role. You can never see individual people's transactions, budgets or goals, only totals. Staff accounts have no personal budget of their own here.`
     : `- You only ever see and change this person's own money records. You have no access to anyone else's data or to admin features.
+- Categories they have (use these exact names; capitalisation in what the person types doesn't matter): ${(ctx.cats ?? []).map((c) => c.name).join(", ") || "Food & Dining, Transport, Housing, Shopping, Utilities, Other, Income"}.
+- People type casually: lowercase, typos, slang and short forms are normal. Work out what they mean (e.g. "food" means Food & Dining, "uber 25" is a $25 Transport expense, "got paid 3k" is $3,000 income) instead of asking, unless it is genuinely unclear.
 - Receipts and invoices: read the merchant, date, total (including tax) and choose the best category; record ONE expense per receipt unless the person asks for line items; attach the file with receipt_file. If the total or date can't be read, ask.
 - Bank statements, spreadsheets or lists: add every transaction (several add_transactions calls if more than 50). Money in = income, money out = expense.
 - Images of things that are not receipts: describe them and help as asked.
@@ -902,27 +972,32 @@ async function setup(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: who, error } = await db.auth.getUser(token);
+  // Check the sign-in and load the profile at the same time (the id from the token is
+  // only trusted after getUser confirms it).
+  let claimedId = "";
+  try { claimedId = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub ?? ""; } catch { /* checked below */ }
+  const [{ data: who, error }, { data: profile }] = await Promise.all([
+    db.auth.getUser(token),
+    isUuid(claimedId) ? db.from("users").select("id, name, email, role, status").eq("id", claimedId).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
   if (error || !who.user) throw new UserError("Your session has expired. Please sign in again.");
-  const { data: profile } = await db.from("users").select("name, email, role, status").eq("id", who.user.id).maybeSingle();
+  if (profile && profile.id !== who.user.id) throw new UserError("Please sign in again.");
   if (!profile) throw new UserError("Your profile was not found.");
   if (profile.status !== "active") throw new UserError("This account is suspended.");
   return { db, userId: who.user.id, role: profile.role as Role, name: profile.name, email: profile.email };
 }
 
 async function handleSend(req: Request, body: any) {
-  const deadline = Date.now() + TOTAL_BUDGET_MS;
-  busyModels.clear();
+  const t0 = Date.now();
+  const deadline = t0 + TOTAL_BUDGET_MS;
+  const timing: Record<string, number> = {};
+  const mark = (k: string) => { timing[k] = Date.now() - t0; };
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new UserError("The AI agent isn't set up yet: an administrator needs to add GEMINI_API_KEY in Supabase.");
   const base = await setup(req);
+  mark("signed_in");
   const ctx: Ctx = { ...base, origin: clean(req.headers.get("origin"), 200), today: todayIn(clean(body.timezone, 60)), files: [] };
   const staff = STAFF.includes(ctx.role);
-
-  if (!staff) {
-    const { data: s } = await ctx.db.from("app_settings").select("value").eq("key", "assistant_enabled").maybeSingle();
-    if (s && s.value === false) throw new UserError("The AI agent has been switched off by an administrator for now.");
-  }
 
   const message = clean(body.message, 8000);
   const attachments: FileRef[] = (Array.isArray(body.attachments) ? body.attachments : []).slice(0, MAX_FILES).map((f: any) => ({
@@ -931,36 +1006,46 @@ async function handleSend(req: Request, body: any) {
   if (attachments.some((f) => !f.path.startsWith(ctx.userId + "/") || f.path.includes(".."))) throw new UserError("One of the files does not belong to you.");
   if (!message && !attachments.length) throw new UserError("Type a message or add a file.");
 
-  const { data: quota, error: qErr } = await ctx.db.rpc("agent_take_quota");
-  if (qErr) dbError(qErr);
+  let conversationId: string | null = isUuid(body.conversation_id) ? body.conversation_id : null;
+  // These lookups don't depend on each other, so run them together.
+  const [settingRes, quotaRes, , convRes, pastRes] = await Promise.all([
+    staff ? Promise.resolve({ data: null }) : ctx.db.from("app_settings").select("value").eq("key", "assistant_enabled").maybeSingle(),
+    ctx.db.rpc("agent_take_quota"),
+    staff ? Promise.resolve(null) : categoryList(ctx).catch(() => null),
+    conversationId ? ctx.db.from("agent_conversations").select("id, title").eq("id", conversationId).maybeSingle() : Promise.resolve({ data: null }),
+    conversationId
+      ? ctx.db.from("agent_messages").select("role, content, attachments, actions, created_at").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(HISTORY)
+      : Promise.resolve({ data: [] }),
+  ]);
+  mark("lookups");
+  if (settingRes.data && (settingRes.data as any).value === false) throw new UserError("The AI agent has been switched off by an administrator for now.");
+  if (quotaRes.error) dbError(quotaRes.error);
+  const quota: any = quotaRes.data;
   if (!quota?.ok) throw new UserError(quota?.message ?? "AI limit reached.");
 
-  // Conversation
-  let conversationId: string | null = isUuid(body.conversation_id) ? body.conversation_id : null;
   let title = "";
-  if (conversationId) {
-    const { data: conv } = await ctx.db.from("agent_conversations").select("id, title").eq("id", conversationId).maybeSingle();
-    if (!conv) conversationId = null;
-    else title = conv.title;
-  }
-  if (!conversationId) {
+  let past: any[] = [];
+  if (conversationId && convRes.data) {
+    title = (convRes.data as any).title;
+    past = (pastRes.data as any[]) ?? [];
+  } else {
     title = (message || attachments[0]?.name || "New chat").replace(/\s+/g, " ").slice(0, 60);
-    const { data: conv, error } = await ctx.db.from("agent_conversations").insert({ user_id: ctx.userId, title }).select("id").single();
-    if (error) dbError(error);
-    conversationId = conv.id;
+    // The browser may pick the new chat's id itself, so a chat that is stopped
+    // early can still be found again.
+    let ins = await ctx.db.from("agent_conversations").insert({ ...(conversationId ? { id: conversationId } : {}), user_id: ctx.userId, title }).select("id").single();
+    if (ins.error && conversationId) ins = await ctx.db.from("agent_conversations").insert({ user_id: ctx.userId, title }).select("id").single();
+    if (ins.error) dbError(ins.error);
+    conversationId = ins.data.id;
   }
-
-  const { data: past } = await ctx.db.from("agent_messages").select("role, content, attachments, actions, created_at")
-    .eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(HISTORY);
-  const history = (past ?? []).reverse();
+  const history = past.reverse();
   for (const m of history) for (const f of (m.attachments ?? []) as FileRef[]) if (f?.path?.startsWith(ctx.userId + "/")) ctx.files.push(f);
   ctx.files.push(...attachments);
 
-  // Save the person's message first so it is never lost.
-  const { data: userMsg, error: umErr } = await ctx.db.from("agent_messages")
+  // Save the person's message straight away (in the background while the AI works),
+  // so it is never lost.
+  const userMsgSave = ctx.db.from("agent_messages")
     .insert({ conversation_id: conversationId, user_id: ctx.userId, role: "user", content: message, attachments })
     .select("id, role, content, attachments, actions, created_at").single();
-  if (umErr) dbError(umErr);
 
   const contents = historyToContents(history);
   const budget = { inline: 0 };
@@ -988,12 +1073,14 @@ async function handleSend(req: Request, body: any) {
   let reply = "";
 
   for (let step = 0; step < MAX_STEPS; step++) {
+    if (req.signal.aborted) { reply = "*Stopped.* Anything already done before you pressed Stop is kept."; break; }
+    mark(`ai_call_${step + 1}_start`);
     const res = await callGemini(key, {
       systemInstruction: { parts: [{ text: systemPrompt(ctx, tools) }] },
       contents,
       tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, ...(t.parameters ? { parameters: t.parameters } : {}) })) }],
       generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
-    }, deadline);
+    }, deadline, req.signal);
     const cand = res?.candidates?.[0];
     if (!cand) {
       reply = res?.promptFeedback?.blockReason ? "I can't help with that request." : "I didn't get an answer from the AI. Please try again.";
@@ -1009,8 +1096,14 @@ async function handleSend(req: Request, body: any) {
     contents.push({ role: "model", parts });
     const responses: any[] = [];
     for (const p of calls) {
-      const { name, args = {}, id } = p.functionCall;
+      const { name: rawName, args: rawArgs = {}, id } = p.functionCall;
+      const name = String(rawName ?? "");
+      const args = normalizeArgs(rawArgs);
       const tool = byName.get(name);
+      if (req.signal.aborted && tool && tool.kind === "write") {
+        responses.push({ functionResponse: { name, response: { error: "The person pressed Stop, so this was not done." }, ...(id ? { id } : {}) } });
+        continue;
+      }
       let response: any;
       if (!tool) {
         response = { error: `Tool ${name} is not available for this account.` };
@@ -1041,11 +1134,18 @@ async function handleSend(req: Request, body: any) {
     if (step === MAX_STEPS - 1) reply = text || "I've done what I could in one go. Tell me if you'd like me to continue.";
   }
 
-  const { data: botMsg, error: bmErr } = await ctx.db.from("agent_messages")
-    .insert({ conversation_id: conversationId, user_id: ctx.userId, role: "assistant", content: reply.slice(0, 40000), actions })
-    .select("id, role, content, attachments, actions, created_at").single();
+  mark("ai_done");
+  const { data: userMsg, error: umErr } = await userMsgSave;
+  if (umErr) dbError(umErr);
+  const [{ data: botMsg, error: bmErr }] = await Promise.all([
+    ctx.db.from("agent_messages")
+      .insert({ conversation_id: conversationId, user_id: ctx.userId, role: "assistant", content: reply.slice(0, 40000), actions })
+      .select("id, role, content, attachments, actions, created_at").single(),
+    ctx.db.from("agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId),
+  ]);
   if (bmErr) dbError(bmErr);
-  await ctx.db.from("agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  mark("saved");
+  console.log("timing ms", JSON.stringify(timing));
 
   return json({ conversation: { id: conversationId, title }, messages: [userMsg, botMsg], changed: actions.some((a) => a.kind === "write" && a.status === "done") });
 }

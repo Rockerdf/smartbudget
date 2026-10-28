@@ -135,9 +135,15 @@ export async function fileUrl(path: string): Promise<string | null> {
   return data.signedUrl;
 }
 
-async function invoke<T>(body: Record<string, unknown>): Promise<T> {
+/** Thrown when the person presses Stop. */
+export class StoppedError extends Error {
+  constructor() { super("Stopped"); this.name = "StoppedError"; }
+}
+
+async function invoke<T>(body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const { data, error } = await supabase.functions.invoke("agent", { body: { ...body, timezone } });
+  const { data, error } = await supabase.functions.invoke("agent", { body: { ...body, timezone }, signal });
+  if (signal?.aborted) throw new StoppedError();
   if (error) {
     const ctx = (error as { context?: Response }).context;
     let msg = "";
@@ -162,12 +168,12 @@ function afterChange(changed: boolean) {
   markTransactionsChanged();
 }
 
-export async function sendToAgent(input: { conversationId: string | null; message: string; attachments: AgentFile[] }) {
+export async function sendToAgent(input: { conversationId: string; message: string; attachments: AgentFile[]; signal?: AbortSignal }) {
   const res = await invoke<{ conversation: { id: string; title: string }; messages: AgentMessage[]; changed: boolean }>({
     conversation_id: input.conversationId,
     message: input.message,
     attachments: input.attachments,
-  });
+  }, input.signal);
   afterChange(res.changed);
   return res;
 }

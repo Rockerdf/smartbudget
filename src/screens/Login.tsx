@@ -101,8 +101,9 @@ export default function Login({ navigate, onSuccess }: { navigate: (s: Screen) =
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
                 <h3 className="font-bold text-[#0F172A] mb-2">Check your inbox</h3>
-                <p className="text-sm text-[#64748B] mb-1">We sent a reset link to</p>
-                <p className="text-sm font-semibold text-[#0F172A] mb-5">{forgotEmail}</p>
+                <p className="text-sm text-[#64748B] mb-1">If an account uses this email, we've sent a reset link to</p>
+                <p className="text-sm font-semibold text-[#0F172A] mb-3">{forgotEmail}</p>
+                <p className="text-xs text-[#94A3B8] mb-5">It can take a minute or two. Check your spam folder too. The link works once, for one hour.</p>
                 <button
                   onClick={() => { setShowForgot(false); setForgotSent(false); setForgotEmail(""); }}
                   className="w-full bg-[#2563EB] text-white font-semibold py-2.5 rounded-xl hover:bg-[#1D4ED8] text-sm transition-colors"

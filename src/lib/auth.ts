@@ -231,9 +231,12 @@ export async function signOutRemote(): Promise<void> {
 }
 
 /** Rebuilds the session from Supabase on page load. Returns null if signed out. */
-export async function restoreRemoteSession(): Promise<UserSession | null> {
+export async function restoreRemoteSession(opts: { fromResetLink?: boolean } = {}): Promise<UserSession | null> {
   const { data } = await supabase.auth.getSession();
   if (!data.session?.user) return null;
+  if (opts.fromResetLink) {
+    try { sessionStorage.setItem(MARKER_KEY, "true"); } catch { /* ignore */ }
+  }
 
   // "Remember me" unticked: end the session when the browser was closed.
   let rememberMe = true;
@@ -252,6 +255,19 @@ export async function restoreRemoteSession(): Promise<UserSession | null> {
     return await buildSession(data.session.user, rememberMe);
   } catch {
     return null;
+  }
+}
+
+/** Sets a new password for the signed-in account (used after opening a reset link). */
+export async function setNewPassword(next: string): Promise<void> {
+  if (next.length < MIN_PASSWORD_LENGTH) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+  const { error } = await supabase.auth.updateUser({ password: next });
+  if (error) {
+    const m = String(error.message).toLowerCase();
+    if (m.includes("different from the old")) throw new Error("Please choose a password different from your old one.");
+    if (m.includes("session") || m.includes("jwt") || m.includes("expired")) throw new Error("This reset link has expired. Please request a new one.");
+    if (m.includes("weak") || m.includes("pwned")) throw new Error("That password is too easy to guess. Please choose a stronger one.");
+    throw new Error(authErrorMessage(error, "Could not save your new password. Please try again."));
   }
 }
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { restoreRemoteSession, signOutRemote } from "./lib/auth";
-import { supabase } from "./lib/supabase";
+import { supabase, RESET_LINK } from "./lib/supabase";
+import ResetPassword from "./screens/ResetPassword";
 import type { UserSession } from "./lib/auth";
 import { ADMIN_PANEL_ROLES, ALL_ADMIN_SCREENS, canAccess } from "./lib/permissions";
 import type { AdminScreen } from "./lib/permissions";
@@ -135,11 +136,13 @@ export default function App() {
   const [txRevision, setTxRevision] = useState(0);
   const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
   const pending = useRef<Screen | null>(null);
+  // Set when the visitor opened a "reset your password" email link.
+  const [resetMode, setResetMode] = useState<"recovery" | "expired" | null>(RESET_LINK);
 
   useEffect(() => {
     let cancelled = false;
 
-    restoreRemoteSession()
+    restoreRemoteSession({ fromResetLink: RESET_LINK === "recovery" })
       .then((remote) => {
         if (cancelled || !remote) return;
         setCurrentUser(remote);
@@ -156,6 +159,7 @@ export default function App() {
 
     // If the session ends elsewhere (sign-out in another tab, expiry), return to login.
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setResetMode("recovery");
       if (event === "SIGNED_OUT") {
         setCurrentUser(null);
         setBankConnected(false);
@@ -303,6 +307,26 @@ export default function App() {
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
         <p className="text-sm text-[#64748B]">Loading SmartBudget…</p>
       </div>
+    );
+  }
+
+  // ── Opened from a password-reset email: ask for the new password first ──────
+  if (resetMode) {
+    return (
+      <ResetPassword
+        mode={resetMode}
+        email={currentUser?.email}
+        onDone={() => {
+          setResetMode(null);
+          if (currentUser) go(ADMIN_PANEL_ROLES.includes(currentUser.role) ? "adminDashboard" : "dashboard");
+          else go("login");
+        }}
+        onBackToSignIn={() => {
+          const wasSignedIn = !!currentUser;
+          setResetMode(null);
+          if (wasSignedIn) handleLogout(); else go("login");
+        }}
+      />
     );
   }
 

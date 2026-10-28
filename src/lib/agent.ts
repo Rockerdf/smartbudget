@@ -144,6 +144,9 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
     if (ctx && typeof ctx.json === "function") {
       try { msg = (await ctx.json())?.error ?? ""; } catch { /* not JSON */ }
       if (!msg && ctx.status === 404) throw new Error(NOT_SET_UP);
+      if (!msg && [502, 503, 504, 546].includes(ctx.status)) {
+        throw new Error("The AI took too long to answer (Google's AI may be busy). Please try again in a minute.");
+      }
     }
     if (!msg && /Failed to send a request|fetch/i.test(error.message)) {
       throw new Error("Couldn't reach the AI agent. Check your connection, or ask an administrator whether the \"agent\" function is deployed.");

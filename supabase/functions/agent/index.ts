@@ -17,8 +17,11 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const GEMINI_BASE = Deno.env.get("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com";
-const MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest";
-const FALLBACK_MODELS = ["gemini-flash-latest", "gemini-2.5-flash"];
+const MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest"];
+// Supabase stops a function after about 150 seconds, so every reply must finish well before that.
+const TOTAL_BUDGET_MS = 110_000;
+const CALL_TIMEOUT_MS = 30_000;
 const BUCKET = "agent-files";
 const MAX_FILES = 6;
 const INLINE_LIMIT = 7 * 1024 * 1024; // bigger files go through Gemini's File API
@@ -794,27 +797,53 @@ async function fileParts(ctx: Ctx, key: string, f: FileRef, budget: { inline: nu
 // ─────────────────────────────────────────────────────────────────────────────
 // Gemini
 // ─────────────────────────────────────────────────────────────────────────────
-async function callGemini(key: string, body: any): Promise<any> {
-  const models = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)];
-  let last = "";
+// Models that are temporarily overloaded are skipped for the rest of this request.
+const busyModels = new Set<string>();
+
+async function callGemini(key: string, body: any, deadline: number): Promise<any> {
+  // Try the chosen model first; if it is busy, slow, missing or failing, move straight on to the next one.
+  const models = [MODEL, ...FALLBACK_MODELS.filter((m) => m !== MODEL)].filter((m) => !busyModels.has(m));
+  let lastStatus = 0;
+  let lastMsg = "";
   for (const model of models) {
-    const res = await fetch(`${GEMINI_BASE}/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const left = deadline - Date.now();
+    if (left < 4000) break;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), Math.min(CALL_TIMEOUT_MS, left - 2000));
+    // Gemini 2.5 models answer much faster with little or no "thinking".
+    const payload = /2\.5/.test(model) ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: { thinkingBudget: 0 } } } : body;
+    let res: Response;
+    try {
+      res = await fetch(`${GEMINI_BASE}/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      lastStatus = 0;
+      lastMsg = ctrl.signal.aborted ? "took too long" : String(e).slice(0, 120);
+      console.error("gemini", model, "no answer:", lastMsg);
+      busyModels.add(model);
+      continue;
+    }
+    clearTimeout(timer);
     if (res.ok) return await res.json();
     const text = await res.text();
-    last = text.slice(0, 300);
-    console.error("gemini", model, res.status, last);
-    if (res.status === 404) continue; // model name not available: try the next one
-    if (res.status === 429) throw new UserError("The AI has hit its free usage limit for the moment. Please wait a minute and try again.");
+    let msg = text;
+    try { msg = JSON.parse(text)?.error?.message ?? text; } catch { /* not JSON */ }
+    lastStatus = res.status;
+    lastMsg = String(msg).slice(0, 200);
+    console.error("gemini", model, res.status, text.slice(0, 500));
     if (res.status === 400 && /API key/i.test(text)) throw new UserError("The AI key on the server is not valid. An administrator needs to update GEMINI_API_KEY.");
-    if (res.status === 403) throw new UserError("The AI key on the server was refused. An administrator needs to check GEMINI_API_KEY.");
-    if (res.status >= 500) throw new UserError("The AI service is having trouble right now. Please try again shortly.");
-    throw new UserError("The AI couldn't handle that request. Try rephrasing it or removing a file.");
+    if (res.status === 403) throw new UserError(`The AI key on the server was refused (${lastMsg}). An administrator needs to check GEMINI_API_KEY.`);
+    if (res.status === 400) throw new UserError(`The AI couldn't handle that request: ${lastMsg}`);
+    busyModels.add(model); // 404 / 429 / 5xx: try the next model
   }
-  throw new UserError(`No Gemini model was available (${last.slice(0, 80)}). Set GEMINI_MODEL to a current model name.`);
+  if (lastStatus === 429) throw new UserError("The AI has hit its free usage limit for the moment. Please wait a minute and try again.");
+  if (lastStatus === 503 || lastMsg === "took too long") throw new UserError("Google's AI is very busy right now and didn't answer in time. Please try again in a minute.");
+  throw new UserError(`The AI service is having trouble right now (${lastStatus || "no answer"}: ${lastMsg || "unknown error"}). Please try again shortly.`);
 }
 
 function systemPrompt(ctx: Ctx, tools: Tool[]) {
@@ -882,6 +911,8 @@ async function setup(req: Request) {
 }
 
 async function handleSend(req: Request, body: any) {
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  busyModels.clear();
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) throw new UserError("The AI agent isn't set up yet: an administrator needs to add GEMINI_API_KEY in Supabase.");
   const base = await setup(req);
@@ -962,7 +993,7 @@ async function handleSend(req: Request, body: any) {
       contents,
       tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, ...(t.parameters ? { parameters: t.parameters } : {}) })) }],
       generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
-    });
+    }, deadline);
     const cand = res?.candidates?.[0];
     if (!cand) {
       reply = res?.promptFeedback?.blockReason ? "I can't help with that request." : "I didn't get an answer from the AI. Please try again.";

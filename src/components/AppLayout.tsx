@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import type { Screen } from "../App";
 import { NOTIFICATIONS_CHANGED, countUnread } from "../lib/notifications";
 import { subscribeTransactionsChanged } from "../lib/transactions";
+import { VoiceButton } from "./VoiceAssistant";
 
 const navItems = [
   { id: "dashboard",    label: "Dashboard",   icon: GridIcon },
@@ -206,8 +207,9 @@ export function DarkToggle({ dark, onToggle }: { dark: boolean; onToggle: () => 
 
 // ---- Top header bar shown on every authenticated page ----
 function TopHeader({
-  screen, userName, userRole, navigate, onLogout, darkMode = false, onToggleDark,
+  screen, userName, userRole, navigate, onLogout, darkMode = false, onToggleDark, voiceOn = false,
 }: {
+  voiceOn?: boolean;
   screen: Screen; userName: string; userRole: "user" | "admin";
   navigate: (s: Screen) => void; onLogout: () => void;
   darkMode?: boolean; onToggleDark?: () => void;
@@ -259,6 +261,7 @@ function TopHeader({
             </span>
           )}
         </button>
+        {voiceOn && <VoiceButton />}
         {/* Dark mode toggle */}
         {onToggleDark && <DarkToggle dark={darkMode} onToggle={onToggleDark} />}
         <ProfileDropdown userName={userName} userRole={userRole} onNavigate={navigate} onLogout={onLogout} />
@@ -341,7 +344,7 @@ export default function AppLayout({ screen, navigate, onLogout, children, userNa
 
       {/* Right pane: header + scrollable content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <TopHeader screen={screen} userName={userName} userRole={userRole} navigate={navigate} onLogout={onLogout} darkMode={darkMode} onToggleDark={onToggleDark} />
+        <TopHeader screen={screen} userName={userName} userRole={userRole} navigate={navigate} onLogout={onLogout} darkMode={darkMode} onToggleDark={onToggleDark} voiceOn={assistantEnabled} />
 
         <AnnouncementBar text={announcement} />
         <main ref={mainRef} className={screen === "agent" ? "flex-1 min-h-0 overflow-hidden relative pb-[calc(58px+env(safe-area-inset-bottom))] md:pb-0" : "flex-1 overflow-y-auto pb-20 md:pb-0 relative"}>

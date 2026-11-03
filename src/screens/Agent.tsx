@@ -8,6 +8,8 @@ import {
   removeUpload, renameConversation, sendToAgent, uploadFile, StoppedError,
 } from "../lib/agent";
 import type { AgentAction, AgentFile, AgentMessage, Conversation } from "../lib/agent";
+import { createRecognizer, setDictating as pauseWakeWord, takeOpenChatRequest, voiceSupported } from "../lib/voice";
+import type { Recognizer } from "../lib/voice";
 
 type Props = { navigate: (s: Screen) => void; userName: string; role: UserRole };
 
@@ -154,7 +156,7 @@ function ActionCard({ a, onDecide, busy }: { a: AgentAction; onDecide?: (approve
   );
 }
 
-function AssistantMessage({ m, navigate, onUpdate, onError }: {
+export function AssistantMessage({ m, navigate, onUpdate, onError }: {
   m: AgentMessage; navigate: (s: Screen) => void; onUpdate: (m: AgentMessage) => void; onError: (e: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -209,7 +211,7 @@ function AssistantMessage({ m, navigate, onUpdate, onError }: {
   );
 }
 
-function UserMessage({ text, files, previews }: { text: string; files: AgentFile[]; previews?: Record<string, string> }) {
+export function UserMessage({ text, files, previews }: { text: string; files: AgentFile[]; previews?: Record<string, string> }) {
   return (
     <div className="flex flex-col items-end gap-1.5">
       {files.length > 0 && (
@@ -286,6 +288,42 @@ export default function Agent({ navigate, userName, role }: Props) {
     catch (e) { setError({ msg: e instanceof Error ? e.message : "Could not open that chat." }); }
     finally { setLoadingChat(false); }
   };
+
+  // Opened from the Smartie voice pop-up ("Open in chat").
+  useEffect(() => {
+    const check = () => { const id = takeOpenChatRequest(); if (id) { void refreshConvs(); void openChat(id); } };
+    check();
+    window.addEventListener("sb-open-chat", check);
+    return () => window.removeEventListener("sb-open-chat", check);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Dictation: speak into the message box.
+  const [dictating, setDictating] = useState(false);
+  const dictRec = useRef<Recognizer | null>(null);
+  const toggleDictation = () => {
+    if (dictating) { dictRec.current?.stop(); return; }
+    const r = createRecognizer();
+    if (!r) return;
+    const base = text ? text.replace(/\s*$/, " ") : "";
+    r.continuous = true;
+    r.interimResults = true;
+    let finals = "";
+    r.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finals += e.results[i][0].transcript; else interim += e.results[i][0].transcript;
+      }
+      setText((base + finals + interim).trimStart());
+    };
+    r.onerror = () => { setDictating(false); pauseWakeWord(false); };
+    r.onend = () => { setDictating(false); pauseWakeWord(false); dictRec.current = null; textRef.current?.focus(); };
+    dictRec.current = r;
+    setDictating(true);
+    pauseWakeWord(true);
+    try { r.start(); } catch { setDictating(false); pauseWakeWord(false); }
+  };
+  useEffect(() => () => { dictRec.current?.abort(); pauseWakeWord(false); }, []);
 
   const newChat = () => {
     setDrawer(false);
@@ -619,6 +657,12 @@ export default function Agent({ navigate, userName, role }: Props) {
               <div className="flex items-center gap-1 px-2 pb-2">
                 <button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach files" title="Attach files (images, PDF, CSV, Excel, Word, video)"
                   className="p-2 rounded-lg text-[#64748B] hover:text-[#2563EB] hover:bg-[#EFF6FF]">{Ico.clip}</button>
+                {voiceSupported() && (
+                  <button type="button" onClick={toggleDictation} aria-label={dictating ? "Stop dictation" : "Dictate"} title={dictating ? "Stop dictation" : "Speak your message"}
+                    className={`p-2 rounded-lg ${dictating ? "text-white bg-[#DB2777] animate-pulse" : "text-[#64748B] hover:text-[#2563EB] hover:bg-[#EFF6FF]"}`}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" /></svg>
+                  </button>
+                )}
                 <button type="button" onClick={() => cameraInput.current?.click()} aria-label="Take a photo" title="Take a photo"
                   className="p-2 rounded-lg text-[#64748B] hover:text-[#2563EB] hover:bg-[#EFF6FF] sm:hidden">{Ico.camera}</button>
                 <span className="text-[11px] text-[#94A3B8] ml-1 hidden sm:inline">{uploading ? "Uploading files…" : pending ? "Working… press Stop or Esc to cancel" : "Enter to send · Shift+Enter for a new line"}</span>

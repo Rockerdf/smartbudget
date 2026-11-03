@@ -5,6 +5,7 @@ import { canAccess, ROLE_META } from "../lib/permissions";
 import type { AdminScreen } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
 import { DarkToggle } from "./AppLayout";
+import { VoiceButton } from "./VoiceAssistant";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -288,6 +289,7 @@ export default function AdminLayout({
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <DbStatus />
+            <VoiceButton />
             {onToggleDark && <DarkToggle dark={darkMode} onToggle={onToggleDark} />}
             <AdminProfileDropdown userName={userName} userRole={userRole} onLogout={onLogout} />
           </div>

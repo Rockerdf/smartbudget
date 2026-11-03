@@ -33,6 +33,7 @@ import AppLayout, { PageSkeleton } from "./components/AppLayout";
 import { DEMO_ACCOUNT, loadDemoConnection, saveDemoConnection } from "./lib/demoBank";
 import { removeDemoTransactions } from "./lib/demoBankActions";
 import AdminLayout from "./components/AdminLayout";
+import VoiceAssistant from "./components/VoiceAssistant";
 import AdminDashboard from "./screens/admin/Dashboard";
 import AdminUsers from "./screens/admin/Users";
 import AdminRoles from "./screens/admin/Roles";
@@ -431,6 +432,7 @@ export default function App() {
           {screen === "adminAuditLogs"      && <AdminAuditLogs />}
           {screen === "adminSystemSettings" && <AdminSystemSettings />}
         </div>
+        <VoiceAssistant navigate={navigate} agentScreen="adminAgent" userName={userName} />
       </AdminLayout>
     );
   }
@@ -478,6 +480,7 @@ export default function App() {
           )}
         </div>
       )}
+      {settings.assistant_enabled && <VoiceAssistant navigate={navigate} agentScreen="agent" userName={userName} />}
     </AppLayout>
   );
 }

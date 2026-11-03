@@ -4,6 +4,7 @@ import type { UserRole } from "../lib/auth";
 import { canAccess, ROLE_META } from "../lib/permissions";
 import type { AdminScreen } from "../lib/permissions";
 import { supabase } from "../lib/supabase";
+import { DarkToggle } from "./AppLayout";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,8 @@ type Props = {
   children:  React.ReactNode;
   userName?: string;
   userRole:  UserRole;
+  darkMode?: boolean;
+  onToggleDark?: () => void;
 };
 
 // ── Nav definition ────────────────────────────────────────────────────────────
@@ -98,17 +101,18 @@ function AdminProfileDropdown({ userName, userRole, onLogout }: {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-xl hover:bg-white/10 transition-colors">
+        aria-label="Account menu"
+        className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-xl hover:bg-[#F1F5F9] transition-colors">
         <div
           style={{ backgroundColor: m.avatarBg, color: m.avatarFg }}
           className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-sm">
           {userName.charAt(0).toUpperCase()}
         </div>
         <div className="hidden sm:flex flex-col items-start leading-none gap-1">
-          <span className="text-sm font-semibold text-white">{userName}</span>
+          <span className="text-sm font-semibold text-[#0F172A] max-w-[140px] truncate">{userName.split(" ")[0]}</span>
           <RolePill role={userRole} />
         </div>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" strokeLinecap="round"
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round"
           className={`hidden sm:block transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
           <polyline points="6 9 12 15 18 9"/>
         </svg>
@@ -177,7 +181,7 @@ function DbStatus() {
   const color = ok === null ? "bg-[#64748B]" : ok ? "bg-[#10B981]" : "bg-[#EF4444]";
   const text = ok === null ? "Checking database…" : ok ? `Database connected · ${ms} ms` : "Database unreachable";
   return (
-    <div className="hidden md:flex items-center gap-2 text-xs text-[#94A3B8]" title="Checked every minute">
+    <div className="hidden md:flex items-center gap-2 text-xs text-[#64748B]" title="Checked every minute">
       <span className={`w-2 h-2 rounded-full inline-block ${color} ${ok ? "animate-pulse" : ""}`} />
       {text}
     </div>
@@ -187,7 +191,7 @@ function DbStatus() {
 // ── Main layout ───────────────────────────────────────────────────────────────
 
 export default function AdminLayout({
-  screen, navigate, onLogout, children, userName = "Administrator", userRole,
+  screen, navigate, onLogout, children, userName = "Administrator", userRole, darkMode = false, onToggleDark,
 }: Props) {
   const pageLabel = NAV_ITEMS.find((n) => n.screen === screen)?.label ?? "Dashboard";
   const m = ROLE_META[userRole];
@@ -195,17 +199,19 @@ export default function AdminLayout({
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => { setMenuOpen(false); mainRef.current?.scrollTo(0, 0); }, [screen]);
 
+  // Same look as the user app (white sidebar, light header); the role badge and
+  // "Admin panel" label show staff which side they are on.
   const sidebar = (
     <>
-      <div className="h-16 flex items-center gap-2.5 px-5 border-b border-white/10 shrink-0">
+      <div className="px-5 py-5 border-b border-[#E2E8F0] flex items-center gap-2.5 shrink-0">
         <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center shrink-0">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2l9 4v6c0 5.25-3.75 10.14-9 11.5C6.75 22.14 3 17.25 3 12V6l9-4z"/></svg>
+          <span className="text-white font-bold text-sm">S</span>
         </div>
-        <div className="flex-1">
-          <div className="text-white font-bold text-sm leading-none">SmartBudget</div>
-          <div className="text-[10px] font-semibold tracking-widest uppercase leading-none mt-0.5" style={{ color: m.avatarBg }}>{m.badge} Panel</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-[#0F172A] text-lg tracking-tight leading-none">SmartBudget</div>
+          <div className="mt-1"><span style={{ backgroundColor: m.bg, color: m.text }} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide">{m.badge} panel</span></div>
         </div>
-        <button type="button" onClick={() => setMenuOpen(false)} className="lg:hidden text-[#94A3B8] hover:text-white" aria-label="Close menu">
+        <button type="button" onClick={() => setMenuOpen(false)} className="lg:hidden text-[#94A3B8] hover:text-[#0F172A]" aria-label="Close menu">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -217,15 +223,16 @@ export default function AdminLayout({
           if (visible.length === 0) return null;
           return (
             <div key={section.heading}>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-[#64748B] px-3 mb-1.5">{section.heading}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#94A3B8] px-3 mb-1.5">{section.heading}</p>
               <div className="space-y-0.5">
                 {visible.map((item) => {
                   const active = screen === item.screen;
                   return (
                     <button key={item.screen} type="button" onClick={() => { setMenuOpen(false); navigate(item.screen); }} aria-current={active ? "page" : undefined}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${active ? "bg-[#2563EB] text-white" : "text-[#94A3B8] hover:bg-white/5 hover:text-white"}`}>
-                      <span className={active ? "text-white" : "text-[#64748B]"}>{item.icon}</span>
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-left ${active ? "bg-[#EFF6FF] text-[#2563EB]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"}`}>
+                      <span className={active ? "text-[#2563EB]" : "text-[#94A3B8]"}>{item.icon}</span>
                       <span className="flex-1 truncate">{item.label}</span>
+                      {item.screen === "adminAgent" && <span className="text-[9px] font-bold bg-[#2563EB] text-white px-1.5 py-0.5 rounded-full">AI</span>}
                     </button>
                   );
                 })}
@@ -234,11 +241,23 @@ export default function AdminLayout({
           );
         })}
       </nav>
-      <div className="px-3 pb-4 pt-3 border-t border-white/10 shrink-0 space-y-1">
-        <button type="button" onClick={() => navigate("privacy")} className="w-full text-left px-3 py-1.5 text-xs text-[#64748B] hover:text-white">Privacy &amp; policies</button>
-        <button type="button" onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#94A3B8] hover:bg-white/5 hover:text-white transition-all">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <div className="px-4 py-4 border-t border-[#E2E8F0] shrink-0">
+        <div className="flex items-center gap-2.5 px-1 mb-3">
+          <div style={{ backgroundColor: m.avatarBg, color: m.avatarFg }} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-sm">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-[#0F172A] truncate">{userName}</p>
+            <p className="text-[10px] text-[#94A3B8]">{m.label} account</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-[#94A3B8] mb-3">
+          <button type="button" onClick={() => navigate("privacy")} className="hover:text-[#2563EB]">Privacy</button>
+          <button type="button" onClick={() => navigate("terms")} className="hover:text-[#2563EB]">Terms</button>
+          <button type="button" onClick={() => navigate("security")} className="hover:text-[#2563EB]">Security</button>
+        </div>
+        <button type="button" onClick={onLogout} className="w-full text-left text-xs text-[#64748B] hover:text-[#EF4444] transition-colors flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           Sign out
         </button>
       </div>
@@ -246,33 +265,30 @@ export default function AdminLayout({
   );
 
   return (
-    <div className="flex h-screen bg-[#0F172A] overflow-hidden">
+    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden">
       {/* Sidebar (desktop) */}
-      <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-white/10">{sidebar}</aside>
+      <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-white border-r border-[#E2E8F0]">{sidebar}</aside>
 
       {/* Sidebar (phones and tablets) */}
       {menuOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Admin menu">
-          <aside className="w-72 max-w-[85vw] bg-[#0F172A] flex flex-col shadow-2xl">{sidebar}</aside>
-          <button type="button" className="flex-1 bg-black/50" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
+          <aside className="w-72 max-w-[85vw] bg-white flex flex-col shadow-2xl">{sidebar}</aside>
+          <button type="button" className="flex-1 bg-black/40 backdrop-blur-[2px]" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
         </div>
       )}
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#F8FAFC] min-w-0">
-        <header className="h-14 bg-[#0F172A] border-b border-white/10 flex items-center justify-between px-3 sm:px-6 shrink-0 gap-3">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header className="h-14 bg-white/90 backdrop-blur-sm border-b border-[#E2E8F0] flex items-center justify-between px-3 sm:px-6 shrink-0 gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <button type="button" onClick={() => setMenuOpen(true)} className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-white hover:bg-white/10" aria-label="Open menu">
+            <button type="button" onClick={() => setMenuOpen(true)} className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-[#475569] hover:bg-[#F1F5F9]" aria-label="Open menu">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
             </button>
-            <div className="text-sm text-[#64748B] flex items-center gap-1.5 min-w-0">
-              <span style={{ color: m.avatarBg }} className="font-semibold text-xs hidden sm:inline">{m.badge}</span>
-              <span className="text-[#334155] hidden sm:inline">/</span>
-              <span className="text-white font-medium truncate">{pageLabel}</span>
-            </div>
+            <span className="text-sm font-semibold text-[#0F172A] truncate">{pageLabel}</span>
           </div>
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-3 shrink-0">
             <DbStatus />
+            {onToggleDark && <DarkToggle dark={darkMode} onToggle={onToggleDark} />}
             <AdminProfileDropdown userName={userName} userRole={userRole} onLogout={onLogout} />
           </div>
         </header>

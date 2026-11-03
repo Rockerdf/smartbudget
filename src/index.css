@@ -251,3 +251,18 @@ body {
 [data-theme="dark"] .text-\[\#B91C1C\]        { color: #FCA5A5 !important; }
 [data-theme="dark"] .border-\[\#FCD34D\]      { border-color: rgba(245,158,11,0.4) !important; }
 [data-theme="dark"] .hover\:bg-\[\#F8FBFF\]:hover { background-color: #1E2530 !important; }
+
+/* Admin panel in dark mode (the panel now shares the user app's light/dark switch) */
+[data-theme="dark"] .divide-\[\#F8FAFC\] > *,
+[data-theme="dark"] .divide-\[\#F1F5F9\] > * { border-color: #2A3441 !important; }
+[data-theme="dark"] .bg-\[\#FAF5FF\]          { background-color: rgba(139,92,246,0.14) !important; }
+[data-theme="dark"] .bg-\[\#FFF5F5\]          { background-color: rgba(239,68,68,0.10) !important; }
+[data-theme="dark"] .bg-\[\#D1FAE5\],
+[data-theme="dark"] .bg-\[\#A7F3D0\]          { background-color: rgba(16,185,129,0.18) !important; }
+[data-theme="dark"] .bg-\[\#FDE68A\]          { background-color: rgba(245,158,11,0.22) !important; }
+[data-theme="dark"] .disabled\:bg-\[\#CBD5E1\]:disabled { background-color: #2A3441 !important; }
+[data-theme="dark"] .text-\[\#065F46\]        { color: #6EE7B7 !important; }
+[data-theme="dark"] .text-\[\#6B21A8\]        { color: #C4B5FD !important; }
+[data-theme="dark"] .text-\[\#9A3412\]        { color: #FDBA74 !important; }
+/* Numbers and labels coloured with an inline near-black style */
+[data-theme="dark"] [style*="color: rgb(15, 23, 42)"] { color: #F1F5F9 !important; }

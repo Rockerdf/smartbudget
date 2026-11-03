@@ -417,6 +417,8 @@ export default function App() {
         onLogout={handleLogout}
         userName={userName}
         userRole={currentUser.role}
+        darkMode={darkMode}
+        onToggleDark={() => setDarkMode((d) => !d)}
       >
         <div className={`${cx} ${screen === "adminAgent" ? "h-full" : ""}`} key={screen}>
           {screen === "adminDashboard"      && <AdminDashboard navigate={navigate} role={currentUser.role} />}

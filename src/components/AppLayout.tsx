@@ -180,7 +180,7 @@ function DropdownItem({ icon, label, onClick }: { icon: ReactNode; label: string
 }
 
 // ---- Dark mode toggle button ----
-function DarkToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }) {
+export function DarkToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}

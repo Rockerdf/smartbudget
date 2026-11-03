@@ -66,6 +66,41 @@ function Orb({ phase }: { phase: Phase }) {
   );
 }
 
+/** Plain-English reason for a speech-recognition error code (with the code, to help support). */
+function speechErrorMessage(code: string): string {
+  switch (code) {
+    case "not-allowed":
+      return "The microphone is blocked for this site. Click the lock icon left of the web address, set Microphone to Allow, then refresh the page. (code: not-allowed)";
+    case "service-not-allowed":
+      return "Your browser’s speech-to-text service is switched off or unavailable. This happens in Brave, and in Edge or Chrome when a work or school account turns it off. Try Chrome on a personal profile, or type instead. (code: service-not-allowed)";
+    case "network":
+      return "Your browser couldn’t reach its speech-to-text service. Check your internet connection, or try Chrome. (code: network)";
+    case "audio-capture":
+      return "No microphone was found. Plug one in or check Windows sound settings, then try again. (code: audio-capture)";
+    case "language-not-supported":
+      return "Your browser can’t do speech-to-text in this language. (code: language-not-supported)";
+    default:
+      return `Voice didn’t work in this browser. Try Chrome, or type instead. (code: ${code})`;
+  }
+}
+
+/** Asks for the microphone directly, so we can tell a blocked mic from other problems. */
+async function checkMicrophone(): Promise<string> {
+  if (!navigator.mediaDevices?.getUserMedia) return "";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    return "";
+  } catch (e) {
+    const name = (e as { name?: string }).name ?? "";
+    if (name === "NotAllowedError" || name === "SecurityError")
+      return "The microphone is blocked. 1) Click the lock icon left of the web address and set Microphone to Allow. 2) In Windows: Settings › Privacy & security › Microphone, turn on “Microphone access” and “Let desktop apps access your microphone”. 3) Refresh this page. (code: mic-blocked)";
+    if (name === "NotFoundError") return "No microphone was found. Plug one in or check Windows sound settings. (code: no-mic)";
+    if (name === "NotReadableError") return "Another app is using the microphone (for example Teams or Zoom). Close it and try again. (code: mic-busy)";
+    return `The microphone couldn’t be started. (code: ${name || "unknown"})`;
+  }
+}
+
 export default function VoiceAssistant({ navigate, agentScreen, userName }: Props) {
   const supported = voiceSupported();
   const [open, setOpen] = useState(false);
@@ -78,7 +113,7 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
   const [wakeOn, setWakeOn] = useState(getWakeEnabled);
   const [speakOn, setSpeakOn] = useState(getSpeakReplies);
   const [visible, setVisible] = useState(() => document.visibilityState === "visible");
-  const [micBlocked, setMicBlocked] = useState(false);
+  const [micProblem, setMicProblem] = useState("");
   const [dictating, setDictatingState] = useState(isDictating);
 
   const rec = useRef<Recognizer | null>(null);
@@ -164,12 +199,13 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
       }
     };
     r.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setMicBlocked(true);
-        setWakeEnabled(false);
-        stopRec();
-        if (openRef.current) { setPhase("error"); setError("Microphone access is blocked. Allow the microphone for this site in your browser’s address bar, then try again."); }
-      }
+      if (e.error === "no-speech" || e.error === "aborted") return; // normal pauses; onend restarts
+      const msg = speechErrorMessage(e.error);
+      if (!msg) return;
+      setMicProblem(msg);
+      setWakeEnabled(false);
+      stopRec();
+      if (openRef.current) { setPhase("error"); setError(msg); }
     };
     r.onend = () => {
       // Browsers end long sessions on their own; carry on while we still should.
@@ -219,21 +255,29 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
     }
   };
 
+  /** Checks the microphone first, then listens for one request. */
+  const listenWithCheck = useCallback(async () => {
+    setMicProblem("");
+    setError("");
+    const problem = await checkMicrophone();
+    if (problem) { setMicProblem(problem); setPhase("error"); setError(problem); return; }
+    startRec("command");
+  }, [startRec]);
+
   const listenNow = () => {
     if (!supported) return;
     stopSpeaking();
-    setError("");
     setReply(null);
     setQuestion("");
-    startRec("command");
+    void listenWithCheck();
   };
 
   const show = useCallback((startListening: boolean) => {
     setOpen(true);
     setError("");
-    if (startListening && supported) { setReply(null); setQuestion(""); startRec("command"); }
+    if (startListening && supported) { setReply(null); setQuestion(""); void listenWithCheck(); }
     else setPhase((p) => (p === "thinking" ? p : "ready"));
-  }, [supported, startRec]);
+  }, [supported, listenWithCheck]);
 
   const close = useCallback(() => {
     stopRec();
@@ -262,10 +306,12 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
     window.dispatchEvent(new Event(OPEN_CHAT_EVENT));
   };
 
-  const toggleWake = (v: boolean) => {
-    setMicBlocked(false);
-    setWakeEnabled(v);
-    if (!v) stopRec();
+  const toggleWake = async (v: boolean) => {
+    setMicProblem("");
+    if (!v) { setWakeEnabled(false); stopRec(); return; }
+    const problem = await checkMicrophone();
+    if (problem) { setMicProblem(problem); return; }
+    setWakeEnabled(true);
   };
 
   const status =
@@ -339,7 +385,7 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-4 text-xs text-[#475569]">
                   <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="checkbox" checked={wakeOn} disabled={!supported} onChange={(e) => toggleWake(e.target.checked)} className="accent-[#2563EB]" />
+                    <input type="checkbox" checked={wakeOn} disabled={!supported} onChange={(e) => { void toggleWake(e.target.checked); }} className="accent-[#2563EB]" />
                     Listen for “Hey Smartie”
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
@@ -349,7 +395,7 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
                 </div>
                 {(reply || question) && <button type="button" onClick={openInChat} className="text-xs font-semibold text-[#2563EB] hover:underline">Open in chat →</button>}
               </div>
-              {micBlocked && <p className="text-[11px] text-[#B91C1C]">Microphone blocked. Allow it from the icon in your browser’s address bar.</p>}
+              {micProblem && phase !== "error" && <p className="text-[11px] text-[#B91C1C] leading-relaxed" role="alert">{micProblem}</p>}
               <p className="text-[10px] text-[#94A3B8] leading-relaxed">
                 Only listens while this tab is open, and only when you switch it on. Your browser turns speech into text (Chrome sends audio to Google to do this). Not financial advice.
               </p>

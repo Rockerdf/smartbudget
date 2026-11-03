@@ -210,6 +210,9 @@ export default function VoiceAssistant({ navigate, agentScreen, userName }: Prop
       setReply(bot);
       setPhase("answered");
       if (bot && speakOn && bot.content) speak(bot.content);
+      // "Open my budget": like Siri, go there straight away.
+      const page = bot?.actions.find((a) => a.tool === "open_page" && a.status === "done" && a.page)?.page;
+      if (page) setTimeout(() => { close(); navigate(page as Screen); }, 1200);
     } catch (e) {
       setPhase("error");
       setError(e instanceof Error ? e.message : "Smartie couldn't answer. Please try again.");

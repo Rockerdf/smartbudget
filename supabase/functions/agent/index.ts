@@ -219,8 +219,10 @@ const N = (description: string) => ({ type: "NUMBER", description });
 const B = (description: string) => ({ type: "BOOLEAN", description });
 const OBJ = (properties: any, required: string[] = []) => ({ type: "OBJECT", properties, required });
 
-const USER_PAGES = ["dashboard", "transactions", "budget", "savings", "analytics", "healthScore", "education", "notifications", "settings", "helpCenter"];
-const STAFF_PAGES = ["adminDashboard", "adminUsers", "adminReports", "adminSecurity", "adminAuditLogs", "adminContent", "adminSystemSettings", "adminRoles"];
+const USER_PAGES = ["dashboard", "agent", "transactions", "budget", "savings", "analytics", "healthScore", "education", "notifications", "settings", "helpCenter"];
+const STAFF_PAGES = ["adminDashboard", "adminAgent", "adminUsers", "adminReports", "adminSecurity", "adminAuditLogs", "adminContent", "adminSystemSettings", "adminRoles"];
+// What each page id is, so "open learn" or "go to the AI agent" picks the right one.
+const PAGE_GUIDE = "Pages for users: dashboard (home overview), agent (the AI Agent chat page), transactions, budget, savings (savings goals), analytics (charts and reports), healthScore (Financial Health Score), education (the Learn page: lessons, videos, books), notifications (alerts), settings (profile, security, privacy, export or delete data), helpCenter (Help and FAQs). Pages for staff: adminDashboard, adminAgent (AI Agent chat), adminUsers, adminReports, adminSecurity (Security Center), adminAuditLogs (Activity Log), adminContent, adminSystemSettings (Site Settings), adminRoles (Roles & Permissions).";
 
 async function findGoal(ctx: Ctx, ref: unknown) {
   const r = clean(ref, 100);
@@ -754,14 +756,14 @@ const TOOLS: Tool[] = [
   {
     name: "open_page",
     who: "user", kind: "read",
-    description: "Show the person a button that opens a page of the app.",
-    parameters: OBJ({ page: S("Page id", { enum: [...USER_PAGES, ...STAFF_PAGES] }) }, ["page"]),
+    description: "Open a page of the app for the person (a button is shown in the chat; the voice assistant opens it straight away). Use it whenever they ask to open, go to or show a page. Pick the page that matches what they asked for exactly. " + PAGE_GUIDE,
+    parameters: OBJ({ page: S("Page id. " + PAGE_GUIDE, { enum: [...USER_PAGES, ...STAFF_PAGES] }) }, ["page"]),
     async run(ctx, a) {
       const allowed = STAFF.includes(ctx.role) ? STAFF_PAGES : USER_PAGES;
       const page = allowed.find((p) => p.toLowerCase() === String(a.page ?? "").toLowerCase().replace(/[\s_-]/g, ""));
       if (!page) throw new UserError("That page isn't available for this account.");
       a.page = page;
-      return { label: "Open page", page: a.page, result: { ok: true, note: "A button to open the page is shown." } };
+      return { label: "Open page", page: a.page, result: { ok: true, page: a.page, note: "Tell the person, in a few words, which page this is, e.g. \"Here's your Budget page.\"" } };
     },
   },
 ];

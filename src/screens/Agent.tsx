@@ -17,7 +17,7 @@ type Draft = { key: string; file: File; preview?: string; status: "uploading" | 
 type Pending = { text: string; files: Draft[] };
 
 const PAGE_LABELS: Record<string, string> = {
-  dashboard: "Dashboard", transactions: "Transactions", budget: "Budget", savings: "Savings", analytics: "Analytics",
+  dashboard: "Dashboard", agent: "AI Agent", adminAgent: "AI Agent", transactions: "Transactions", budget: "Budget", savings: "Savings", analytics: "Analytics",
   healthScore: "Health Score", education: "Learn", notifications: "Notifications", settings: "Settings", helpCenter: "Help",
   adminDashboard: "Dashboard", adminUsers: "Users", adminReports: "Reports", adminSecurity: "Security Center",
   adminAuditLogs: "Activity Log", adminContent: "Content", adminSystemSettings: "Site Settings", adminRoles: "Roles",

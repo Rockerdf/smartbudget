@@ -87,6 +87,9 @@ function speechErrorMessage(code: string): string {
 /** Asks for the microphone directly, so we can tell a blocked mic from other problems. */
 async function checkMicrophone(): Promise<string> {
   if (!navigator.mediaDevices?.getUserMedia) return "";
+  const doc = document as unknown as { permissionsPolicy?: { allowsFeature?: (f: string) => boolean }; featurePolicy?: { allowsFeature?: (f: string) => boolean } };
+  const policyAllows = (doc.permissionsPolicy ?? doc.featurePolicy)?.allowsFeature?.("microphone");
+  if (policyAllows === false) return "This website’s own security settings are blocking the microphone, so browser settings can’t fix it. The site needs redeploying with microphone=(self) in its Permissions-Policy. (code: site-policy)";
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach((t) => t.stop());
